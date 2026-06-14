@@ -20,15 +20,37 @@ resources:
 
 workdir: .                  # syncs the repo to the remote box
 
+# Persist DATA + CHECKPOINTS in a bucket so they download ONCE and survive
+# preemption / re-runs (the big compute-time saver when iterating). SkyPilot mounts
+# the same bucket on every launch; works on AWS/GCP/Azure/R2. (On RunPod/Lambda use a
+# provider Network Volume / persistent filesystem mounted at /artifacts & /data-cache.)
+file_mounts:
+  /artifacts:
+    name: YOUR-BUCKET-llm-artifacts     # checkpoints (ckpt_dir lives here)
+    mode: MOUNT
+  /data-cache:
+    name: YOUR-BUCKET-llm-data          # HF cache + pre-tokenized .bin (downloaded once)
+    mode: MOUNT
+
+envs:
+  # Point the HF cache at the persistent mount so datasets/models are never re-downloaded.
+  HF_HOME: /data-cache/hf
+  HF_DATASETS_CACHE: /data-cache/hf/datasets
+  HF_HUB_DOWNLOAD_TIMEOUT: "60"
+
 setup: |
   pip install --no-cache-dir -r requirements.lock
-  pip install --no-cache-dir -e .
+  pip install --no-cache-dir -e . hf_xet      # hf_xet = faster/steadier HF transfer
 
 run: |
   python - <<'PY'
   import torch; print("GPUs:", torch.cuda.device_count(), torch.cuda.get_device_name(0))
   PY
-  # Sanity run today; swap --config for a real pretrain config later, e.g.
-  #   torchrun --nproc_per_node=8 scripts/pretrain.py --config configs/pretrain.yaml
+  # One-time data prep into the persistent mount (skipped automatically if it exists):
+  test -f /data-cache/tok_32k.json || python scripts/train_tokenizer.py --config configs/tokenizer_32k.yaml
+  test -f /data-cache/fineweb.bin  || python scripts/prepare_data.py --tokenizer /data-cache/tok_32k.json --tokens 3000000000 --out /data-cache/fineweb.bin
+  # Real pretrain reads the local .bin and checkpoints to the bucket (set data.source: bin,
+  # data.bin_path: /data-cache/fineweb.bin, ckpt_dir: /artifacts/ckpt in your config):
+  #   torchrun --nproc_per_node=8 scripts/pretrain.py --config configs/pretrain_300m.yaml
   python scripts/train_tokenizer.py --config configs/model_tiny.yaml
   python scripts/smoke_train.py     --config configs/model_tiny.yaml

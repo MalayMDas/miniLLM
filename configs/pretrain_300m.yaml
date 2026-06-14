@@ -20,6 +20,8 @@ data:
   hf_dataset: HuggingFaceFW/fineweb-edu
   hf_name: sample-10BT
   text_field: text
+  num_workers: 4          # Linux: background prefetch overlaps download with compute
+  prefetch_factor: 4
 
 train:
   steps: 50000           # ~ tune to your token budget (Chinchilla-ish for 300M)

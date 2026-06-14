@@ -20,6 +20,7 @@ data:
   source: bin                       # read the local .bin instead of streaming
   bin_path: data/fineweb_local.bin
   block_size: 512
+  num_workers: 0                    # Linux: try 2-4 to overlap I/O; keep 0 on Windows
 
 train:
   steps: 1000000

@@ -41,6 +41,19 @@ def step_from_ckpt(path) -> int:
         return 0
 
 
+def _loader_kwargs(d):
+    """num_workers>0 => background processes prefetch+tokenize next batches while the
+    GPU trains (overlaps download/CPU with compute). Recommended on Linux cloud;
+    leave 0 on Windows (multiprocessing is flaky there). NOTE: with workers, the
+    streaming resume position (skip_blocks) drifts by ~prefetch — for exact resume
+    use num_workers=0, or the position-free `bin` source."""
+    nw = int(d.get("num_workers", 0))
+    if nw <= 0:
+        return {}
+    return dict(num_workers=nw, prefetch_factor=int(d.get("prefetch_factor", 2)),
+                persistent_workers=True)
+
+
 def build_loader(cfg, tok, dist, skip_blocks: int = 0):
     d = cfg["data"]
     bs = cfg["train"]["batch_size"]
@@ -57,7 +70,7 @@ def build_loader(cfg, tok, dist, skip_blocks: int = 0):
                               name=d.get("hf_name"), text_field=d.get("text_field", "text"),
                               rank=dist.rank, world_size=dist.world_size,
                               skip_blocks=skip_blocks)   # resume continues through corpus
-        return DataLoader(ds, batch_size=bs)   # IterableDataset: shards itself by rank/worker
+        return DataLoader(ds, batch_size=bs, **_loader_kwargs(d))
     elif d["source"] == "bin":
         # offline: pre-tokenized local .bin (no network). Random windows => resume
         # naturally continues sampling the full corpus; skip_blocks not needed.
@@ -65,7 +78,7 @@ def build_loader(cfg, tok, dist, skip_blocks: int = 0):
         ds = BinDataset(d["bin_path"], d["block_size"],
                         seed=cfg["train"].get("seed", 0), rank=dist.rank,
                         world_size=dist.world_size)
-        return DataLoader(ds, batch_size=bs)
+        return DataLoader(ds, batch_size=bs, **_loader_kwargs(d))
     raise ValueError(f"unknown data.source: {d['source']}")
 
 

@@ -79,6 +79,41 @@ docker run --gpus all -e HF_TOKEN -e WANDB_API_KEY -v $PWD/artifacts:/workspace/
 
 ---
 
+## 2.5 Data persistence & caching (the iterate-many-times compute saver)
+
+**Goal:** download/tokenize the corpus **once, ever** — then every run, pod, rank, and
+spot-resume reads it locally with no network. This is the single biggest way to stop
+paying GPU-hours for downloads.
+
+**Do NOT bake data into the Docker image** (huge images, rebuilt on every code change,
+re-pulled per node). Keep code in the image, **data on persistent storage, mounted at
+runtime.**
+
+Where "persistent storage" lives on cheap providers:
+- **RunPod** → **Network Volume** (persists across pods) — mount at `/data-cache`.
+- **Lambda Cloud** → attachable **persistent filesystem** (region-dependent).
+- **vast.ai** → rentable **persistent volume** on the host.
+- **Universal / provider-independent** → your own cheap object store: **Cloudflare R2**
+  (zero egress) or **Backblaze B2**; `rclone copy` to the node's local disk at startup,
+  or mount via SkyPilot `file_mounts` on AWS/GCP/Azure.
+
+Two things to put on the persistent mount:
+1. **HF cache** — `export HF_HOME=/data-cache/hf` so `datasets`/model downloads are reused.
+2. **Pre-tokenized `.bin`** — `prepare_data.py` once → train offline forever after:
+```bash
+# one-time (writes to the persistent mount):
+python scripts/prepare_data.py --tokenizer /data-cache/tok_32k.json \
+    --tokens 3000000000 --out /data-cache/fineweb.bin      # ~6 GB for 3B tokens (uint16)
+# then in your pretrain config:  data.source: bin,  data.bin_path: /data-cache/fineweb.bin
+```
+`infra/sky/train.yaml` already shows the bucket mounts + `HF_HOME` + a guarded one-time
+prep (re-runs skip it). Also `pip install hf_xet` for faster transfer.
+
+**Streaming vs offline tradeoff:** streaming (`source: hf`) needs no prep but re-downloads
+each run and can stall on the network; set `data.num_workers: 4` so background workers
+prefetch+overlap with compute (Linux). Offline (`source: bin`) prepays once and trains
+with zero network. **For iterating many times, prefer the `.bin` on a persistent mount.**
+
 ## 3. Stage 1 — Tokenizer (32k, on a FineWeb-Edu sample)
 ```bash
 python scripts/train_tokenizer.py --config configs/tokenizer_32k.yaml
