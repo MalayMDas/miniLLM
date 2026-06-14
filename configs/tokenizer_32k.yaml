@@ -1,0 +1,13 @@
+# Train the real 32k byte-level BPE on a FineWeb-Edu sample (streamed, no full
+# download). Used by the 300M pretraining run.
+#   python scripts/train_tokenizer.py --config configs/tokenizer_32k.yaml
+tokenizer:
+  mode: bpe
+  path: artifacts/tok_32k.json
+  vocab_size: 32000
+  min_frequency: 2
+  source: hf
+  hf_dataset: HuggingFaceFW/fineweb-edu
+  hf_name: sample-10BT
+  text_field: text
+  sample_docs: 200000        # ~enough text for stable 32k merges
