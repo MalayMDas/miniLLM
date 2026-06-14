@@ -156,6 +156,7 @@ Hand-built but standard components — each is a defensible choice:
 | **src/llmscratch/eval/** | |
 | `scoring.py` | `continuation_logprob` / `sequence_nll` (loglikelihood primitive) |
 | `benchmarks.py` | Perplexity + length-normalized multiple-choice accuracy |
+| `tasks/` | Real benchmark loaders+scorers: HellaSwag, OpenBookQA, GSM8K, BFCL, VQAv2 |
 | **src/llmscratch/serve/** | |
 | `generate.py` | Sampling (top-k/top-p, stop tokens) + `generate_chat` |
 | `api.py` | OpenAI-compatible FastAPI (`/v1/chat/completions`); vLLM-contract |
@@ -182,7 +183,8 @@ Hand-built but standard components — each is a defensible choice:
 | `pretrain.py` | Base pretraining — single-GPU or DDP via `torchrun`; auto-resume |
 | `sft.py` | Instruct/tool SFT from a base checkpoint |
 | `train_vision.py` | Multimodal LLaVA training (phase 1 / phase 2) |
-| `evaluate.py` | Run perplexity + multiple-choice benchmarks on a checkpoint |
+| `evaluate.py` | Quick local eval: perplexity + custom MCQ smoke set |
+| `benchmark.py` | Real benchmarks (HellaSwag/OpenBookQA/GSM8K/BFCL) — local, no API |
 | `quantize.py` | Quantize a checkpoint; report size + perplexity delta |
 | `check_ddp.py` | Verify the DDP path locally (2 ranks, CPU, FileStore) |
 | **tests/** (27 passing) | |

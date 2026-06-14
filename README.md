@@ -69,7 +69,9 @@ python scripts/pretrain.py --config configs/pretrain_tiny.yaml          # base m
 python scripts/sft.py      --config configs/sft_tiny.yaml               # instruct (loads the base ckpt)
 python scripts/sft.py      --config configs/sft_tools_tiny.yaml         # tool-use SFT
 python scripts/train_vision.py --phase 2                               # multimodal (synthetic data)
-python scripts/evaluate.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt  # benchmarks
+python scripts/evaluate.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt  # quick local smoke eval
+python scripts/benchmark.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt \
+    --tasks hellaswag,openbookqa,gsm8k,bfcl --limit 100   # real benchmarks, local, no API
 python scripts/quantize.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt  # size/quality report
 tensorboard --logdir runs                                              # watch training curves
 ```
