@@ -46,6 +46,18 @@ class TrainArgs:
                                  # extending a finished model, so it gets a fresh schedule)
 
 
+def _unwrap(m):
+    """Strip DDP (.module) and torch.compile (._orig_mod) wrappers, any nesting order."""
+    changed = True
+    while changed:
+        changed = False
+        if hasattr(m, "module"):
+            m, changed = m.module, True
+        if hasattr(m, "_orig_mod"):
+            m, changed = m._orig_mod, True
+    return m
+
+
 def _infinite(loader):
     """Re-iterate a loader forever. Unlike itertools.cycle this re-creates the
     iterator each epoch — so map-style datasets reshuffle and IterableDatasets
@@ -78,8 +90,10 @@ class Trainer:
                  eval_fn: Optional[Callable[[], dict]] = None,
                  tokens_per_step: Optional[int] = None):
         self.model = model.to(args.device)
-        # unwrap DDP/FSDP for checkpointing + config access
-        self.raw_model = model.module if hasattr(model, "module") else model
+        # unwrap DDP/FSDP (.module) AND torch.compile (._orig_mod) for checkpointing +
+        # config access, so saved state_dict keys stay clean (no `_orig_mod.` prefix)
+        # and load cleanly into the eager eval/serve model. Order-agnostic.
+        self.raw_model = _unwrap(model)
         self.loader = train_loader
         self.a = args
         self.logger = logger or NoopLogger()

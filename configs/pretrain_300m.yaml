@@ -32,6 +32,8 @@ train:
   batch_size: 16
   device: auto
   amp: true              # bf16 autocast
+  compile: true          # torch.compile on Linux GPU (often 1.3-2x); auto-skipped elsewhere
+  compile_mode: default  # 'default' | 'reduce-overhead' (CUDA graphs, +VRAM) | 'max-autotune'
   log_every: 20
   ckpt_every: 1000       # checkpoint to survive spot preemption
   ckpt_dir: artifacts/ckpt_pretrain_300m

@@ -32,6 +32,7 @@ train:
   batch_size: 8
   device: auto
   amp: true               # bf16 autocast (3060 supports it)
+  compile: false          # torch.compile needs Triton (Linux); leave off on Windows
   log_every: 20
   ckpt_every: 500         # ~frequent so you keep progress if you stop early
   ckpt_dir: artifacts/ckpt_pretrain_local

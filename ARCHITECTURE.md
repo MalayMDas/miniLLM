@@ -371,6 +371,7 @@ All knobs live in `configs/*.yaml` — no code edits needed.
 | **Sampling frequency** | `train.sample_every` | how often a generation is logged |
 | **Logging backend** | `logging.backend` | `tensorboard` ↔ `wandb` ↔ `none` (+ `project`, `run_name`) |
 | **CPU vs GPU** | `train.device` | `auto` / `cuda` / `cpu` |
+| **torch.compile** | `train.compile` (+`compile_mode`) | `true` for Linux-GPU speedup (often 1.3-2×); auto-skipped on CPU/Windows. `reduce-overhead` uses CUDA graphs (+VRAM) |
 | **Number of GPUs** | launch cmd | `torchrun --nproc_per_node=N` (effective batch ×= N) |
 | **Grad accumulation** | `train.grad_accum` | effective batch = batch_size × grad_accum × N_gpus |
 | **Cloud GPU count/type** | `infra/sky/train.yaml` | `resources.accelerators`, `use_spot` |

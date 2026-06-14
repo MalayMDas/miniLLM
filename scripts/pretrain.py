@@ -33,6 +33,26 @@ from llmscratch.utils import (load_config, build_logger, run_id,
                               find_latest, load_checkpoint, setup_distributed, cleanup)
 
 
+def maybe_compile(model, tcfg, is_main: bool):
+    """Opt-in torch.compile (train.compile: true). Skipped on CPU/Windows where the
+    Inductor/Triton backend is unavailable or unreliable. Big win on Linux GPUs."""
+    if not tcfg.get("compile", False):
+        return model
+    import platform
+    if not torch.cuda.is_available():
+        if is_main:
+            print("[compile] skipped: no CUDA")
+        return model
+    if platform.system() == "Windows":
+        if is_main:
+            print("[compile] skipped: torch.compile/Triton unreliable on Windows")
+        return model
+    mode = tcfg.get("compile_mode", "default")   # 'default' | 'reduce-overhead' | 'max-autotune'
+    if is_main:
+        print(f"[compile] torch.compile(mode={mode}) — first steps are slow (compiling)")
+    return torch.compile(model, mode=mode)
+
+
 def step_from_ckpt(path) -> int:
     """Parse the step from a 'step_0000300.pt' checkpoint filename (cheap, no load)."""
     try:
@@ -110,6 +130,9 @@ def main():
         from torch.nn.parallel import DistributedDataParallel as DDP
         ddp_ids = [dist.local_rank] if device.startswith("cuda") else None
         model = DDP(model, device_ids=ddp_ids)
+
+    # opt-in torch.compile AFTER DDP (lets Dynamo's DDPOptimizer split at bucket bounds)
+    model = maybe_compile(model, cfg["train"], dist.is_main)
 
     t = cfg["train"]
     # Resume: find the latest checkpoint and compute how many data blocks were already
