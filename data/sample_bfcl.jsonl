@@ -1,0 +1,2 @@
+{"question": "What is 6 times 7?", "tools": [{"name": "calculator", "description": "evaluate arithmetic", "parameters": {"expression": {"type": "string"}}}], "gold": {"name": "calculator", "arguments": {"expression": "6*7"}}}
+{"question": "Add 15 and 27.", "tools": [{"name": "calculator", "description": "evaluate arithmetic", "parameters": {"expression": {"type": "string"}}}], "gold": {"name": "calculator", "arguments": {"expression": "15+27"}}}

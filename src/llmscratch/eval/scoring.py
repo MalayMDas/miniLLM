@@ -16,7 +16,15 @@ import torch.nn.functional as F
 @torch.no_grad()
 def continuation_logprob(model, prefix_ids: List[int], cont_ids: List[int],
                          device: str = "cpu") -> float:
-    """Sum log p(cont | prefix) under the model (teacher-forced)."""
+    """Sum log p(cont | prefix) under the model (teacher-forced).
+
+    If prefix+cont exceeds the model's context, left-truncate the PREFIX (keep the
+    full continuation at the end) — standard harness behavior for long contexts.
+    """
+    max_len = model.cfg.max_seq_len
+    if len(prefix_ids) + len(cont_ids) > max_len:
+        cont_ids = cont_ids[-(max_len - 1):]                 # guard: cont alone too long
+        prefix_ids = prefix_ids[-(max_len - len(cont_ids)):]
     ids = torch.tensor([prefix_ids + cont_ids], device=device)
     logits, _ = model(ids)
     logits = logits[0]                              # (T, vocab)
@@ -32,6 +40,7 @@ def continuation_logprob(model, prefix_ids: List[int], cont_ids: List[int],
 @torch.no_grad()
 def sequence_nll(model, ids: List[int], device: str = "cpu") -> tuple[float, int]:
     """Return (sum negative log-likelihood, num predicted tokens) for a sequence."""
+    ids = ids[: model.cfg.max_seq_len]
     x = torch.tensor([ids], device=device)
     logits, _ = model(x)
     logprobs = F.log_softmax(logits[0].float(), dim=-1)
