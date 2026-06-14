@@ -1,0 +1,33 @@
+# Tiny config for a LOCAL smoke-train (CPU/small GPU). Proves the loop end-to-end
+# before any cloud spend. Scale these numbers up via model_300m.yaml later.
+model:
+  dim: 128
+  n_layers: 4
+  n_heads: 4
+  n_kv_heads: 2
+  max_seq_len: 64
+  dropout: 0.0
+
+tokenizer:
+  mode: bpe            # 'bpe' (default) or 'byte' (raw UTF-8, no training)
+  path: artifacts/tok.json
+  vocab_size: 2000     # tiny vocab for the tiny corpus
+
+data:
+  corpus: data/sample.txt
+  block_size: 32
+
+train:
+  batch_size: 4
+  steps: 200
+  lr: 0.0006
+  weight_decay: 0.1
+  warmup_steps: 20
+  seed: 1337
+  device: auto         # auto -> cuda if available else cpu
+  sample_every: 50     # generate a sample for the logger every N steps
+
+logging:
+  backend: tensorboard # 'tensorboard' | 'wandb' | 'none'
+  logdir: runs
+  run_name: smoke      # subfolder under logdir; view with: tensorboard --logdir runs

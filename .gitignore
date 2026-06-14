@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Experiment tracking & training artifacts (large / reproducible — keep out of git)
+# TensorBoard event files:
+runs/
+wandb/
+# trained tokenizers, checkpoints:
+artifacts/
+checkpoints/
+*.ckpt
+*.pt
+*.bin
+*.safetensors
+*.gguf
+
+# Data (pull from HF / regenerate; don't bloat the repo)
+data/cache/
+data/*.arrow
+*.tfrecord
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Secrets / cloud
+.env
+*.env
+*.key
+service-account*.json

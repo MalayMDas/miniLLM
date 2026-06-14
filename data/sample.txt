@@ -1,0 +1,20 @@
+The quick brown fox jumps over the lazy dog.
+Large language models learn to predict the next token in a sequence.
+Attention lets each token look at every previous token to gather context.
+A transformer block has attention followed by a feed-forward network.
+RMSNorm normalizes activations and stabilizes training.
+Rotary position embeddings encode relative position by rotating query and key vectors.
+Grouped-query attention shrinks the key-value cache for faster inference.
+Tokenization turns text into integer ids the model can process.
+Byte-level BPE compresses English text roughly four times versus raw bytes.
+Pretraining teaches the base model to model language from raw text.
+Supervised fine-tuning turns a base model into a helpful instruction follower.
+Reinforcement learning aligns the model with verifiable rewards.
+Retrieval augmented generation grounds answers in retrieved documents.
+Tool use lets the model call functions to act in the world.
+Quantization shrinks the model so it runs on machines with little memory.
+Evaluation against benchmarks measures progress at every stage.
+The fox and the dog became unlikely friends under the bright summer sun.
+Gradient descent slowly nudges the weights toward a lower loss.
+A learning rate that is too high makes training diverge.
+Warmup gradually increases the learning rate at the start of training.

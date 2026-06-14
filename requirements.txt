@@ -1,0 +1,12 @@
+# Core (local-runnable pieces)
+torch>=2.2
+numpy
+pyyaml
+tokenizers>=0.15        # byte-level BPE trainer
+datasets>=2.18          # HuggingFace streaming (optional for smoke-train)
+tqdm
+tensorboard>=2.15       # local experiment tracking / progress dashboard
+
+# Added in later stages (kept here for reference; install when needed):
+# accelerate deepspeed flash-attn trl lm-eval vllm bitsandbytes
+# sentence-transformers faiss-cpu chromadb wandb
