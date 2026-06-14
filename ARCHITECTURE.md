@@ -58,10 +58,47 @@ remaining work is scaling up (real data volume + multi-GPU), not new components.
 | Reproducibility | **requirements.lock** | Pins exact versions | uv.lock, poetry.lock, conda env | lockfiles > editable install for "runs the same in 3 months" |
 | Container | **Docker** (PyTorch CUDA base) | Pins CUDA/cuDNN/driver compat — kills the #1 cloud bug | bare venv, conda-pack, Singularity/Apptainer | Docker adds build time/size; needed for serving & K8s/Vertex |
 | Launch/orchestration | **SkyPilot** (optional) | Cheapest spot GPU across clouds, managed auto-resume, 1 YAML | Kubeflow, Airflow, Flyte, Metaflow, raw VMs | Heavy orchestrators = a cluster to operate; unjustified for one team |
-| Multi-GPU (planned) | **FSDP / DeepSpeed ZeRO** | Shard params/optimizer across GPUs | Megatron-LM, raw DDP, TorchTitan | DDP can't fit big models; Megatron is powerful but complex |
-| Eval (planned) | **lm-evaluation-harness** | Standard benchmark suite | HELM, custom | harness = comparable, community-trusted numbers |
-| Serving (planned) | **vLLM** | PagedAttention, high throughput, OpenAI-compatible API | TGI, SGLang, llama.cpp server | vLLM = best GPU throughput; llama.cpp wins on CPU/low-VRAM |
-| Quantization (planned) | **GGUF/llama.cpp, AWQ, GPTQ, bitsandbytes** | Run on small VRAM / CPU | — | trade quality vs size vs speed (measured per bit-width) |
+| Multi-GPU | **DDP** (built); FSDP/DeepSpeed ZeRO (scale path) | Data-parallel now; shard params/optimizer when model won't fit | Megatron-LM, TorchTitan | DDP can't fit huge models; FSDP/DeepSpeed for that; Megatron powerful but complex |
+| Eval | **lm-evaluation-harness** (adapter built) + own benchmarks | Comparable numbers + fast local checks | HELM, custom | harness = community-trusted; ours = transparent/fast |
+| Serving | **FastAPI** (built) / **vLLM** (production) | OpenAI-compatible API now; PagedAttention for throughput | TGI, SGLang, llama.cpp server | vLLM = best GPU throughput; llama.cpp wins on CPU/low-VRAM |
+| Quantization | **int8 dynamic** (built); GGUF/AWQ/GPTQ/bitsandbytes | Shrink for small VRAM / CPU | — | trade quality vs size vs speed (measured per bit-width) |
+
+### 2.1 Libraries (actual dependencies) — package · used for · alternatives
+
+**Core (always installed — `requirements.txt` / `requirements.lock`):**
+
+| Package | Used for in this project | Alternatives |
+|---|---|---|
+| `torch` | model, autograd, training loop, SDPA attention, DDP, int8 quant | JAX/Flax, TensorFlow |
+| `tokenizers` (HF) | train/load the byte-level BPE tokenizer (`tokenizer/bpe.py`) | sentencepiece, tiktoken, raw bytes |
+| `datasets` (HF) | stream FineWeb-Edu for pretraining + download benchmark data (`data/hf_stream.py`, `eval/tasks/`) | webdataset, mosaicml-streaming, custom |
+| `numpy` | RAG vector store math, misc array ops | — |
+| `pyyaml` | parse per-stage config files (`utils/config.py`) | tomli, json, Hydra/OmegaConf |
+| `tqdm` | progress bars for long loops | rich, manual |
+| `tensorboard` | local experiment tracking dashboard (`utils/metrics_logger.py`) | wandb, mlflow, comet |
+
+**Optional (installed per feature — see `requirements.txt` notes):**
+
+| Package | Used for | Alternatives |
+|---|---|---|
+| `lm-eval` | official benchmark numbers via the adapter (`eval/lm_eval_adapter.py`, `scripts/lm_eval_run.py`) | HELM, custom harness (our `benchmark.py`) |
+| `transformers` | the pretrained **SigLIP** vision encoder toggle (`vision/encoder.py`) | open_clip, timm |
+| `fastapi` + `uvicorn` + `pydantic` | OpenAI-compatible serving API (`serve/api.py`) | Flask, vLLM's own server, TGI |
+| `accelerate` / `deepspeed` | scale DDP → FSDP/ZeRO for models too big for one GPU | raw `torch.distributed`, Megatron-LM, TorchTitan |
+| `flash-attn` | faster/leaner attention kernels at scale (SDPA already uses them when present) | SDPA built-in, xformers |
+| `trl` | drop-in SFT/DPO/GRPO if you prefer a framework over our transparent `align/` code | our own `train/`+`align/`, OpenRLHF, veRL |
+| `vllm` | high-throughput production serving (PagedAttention) | TGI, SGLang, llama.cpp server |
+| `bitsandbytes` | quick 4/8-bit GPU loading; GGUF (llama.cpp) / AWQ / GPTQ for deploy | — |
+| `sentence-transformers` | stronger RAG embeddings than our hashing embedder | OpenAI/Cohere embeds (API), instructor |
+| `faiss-cpu` / `chromadb` | scalable vector index for RAG (we ship a NumPy stand-in) | pgvector, Milvus, Qdrant |
+| `wandb` | hosted/team experiment tracking (one-line swap from TensorBoard) | mlflow, comet, neptune |
+| `skypilot` | launch cheapest spot GPU + managed auto-resume (`infra/sky/`) | Kubeflow, Airflow, Flyte, raw VMs |
+
+Design intent: the **core** set is deliberately tiny so the whole pipeline runs
+locally with no heavy deps; everything else is opt-in for scale/deploy. Our own
+transparent modules (`train/`, `align/`, `eval/benchmarks.py`, `serve/api.py`,
+`apps/rag/`) mean the project *works* without the optional libraries — they're
+upgrades, not requirements.
 
 ---
 
