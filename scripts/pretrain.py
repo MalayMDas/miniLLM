@@ -7,6 +7,14 @@ Supports a local corpus (offline) or HF streaming (set data.source: hf).
 """
 from __future__ import annotations
 
+# Import pyarrow/datasets BEFORE torch: on Windows a pyarrow load after torch/CUDA
+# init segfaults (native DLL clash, exit 0xC0000005). Harmless no-op on Linux / when
+# datasets isn't installed. MUST stay above `import torch`.
+try:
+    import datasets  # noqa: F401
+except Exception:
+    pass
+
 import argparse
 from pathlib import Path
 

@@ -10,6 +10,12 @@ a FineWeb-Edu sample.
 """
 from __future__ import annotations
 
+# Import datasets/pyarrow before any torch-importing module (Windows DLL clash guard).
+try:
+    import datasets  # noqa: F401
+except Exception:
+    pass
+
 import argparse
 from pathlib import Path
 from typing import Iterator
