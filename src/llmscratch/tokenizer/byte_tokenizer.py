@@ -50,6 +50,10 @@ class ByteTokenizer:
     def eos_id(self) -> int:
         return self.special_to_id["<|eos|>"]
 
+    def token_to_id(self, tok: str) -> int:
+        """Id of a special token (e.g. '<|im_start|>'). Used for chat/tool formatting."""
+        return self.special_to_id[tok]
+
     def encode(self, text: str, add_bos: bool = False, add_eos: bool = False) -> List[int]:
         ids = list(text.encode("utf-8"))
         if add_bos:

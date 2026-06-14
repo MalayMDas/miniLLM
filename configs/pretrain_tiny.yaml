@@ -1,0 +1,42 @@
+# Base pretraining (tiny, local-runnable). For a real run: set data.source=hf,
+# bump model dims, point to FineWeb-Edu, and launch via torchrun/SkyPilot.
+model:
+  dim: 128
+  n_layers: 4
+  n_heads: 4
+  n_kv_heads: 2
+  max_seq_len: 64
+  dropout: 0.0
+
+tokenizer:
+  mode: bpe
+  path: artifacts/tok.json
+  vocab_size: 2000
+
+data:
+  source: local            # 'local' (sample.txt) or 'hf' (streaming)
+  corpus: data/sample.txt
+  block_size: 32
+  # hf-only fields:
+  hf_dataset: HuggingFaceFW/fineweb-edu
+  hf_name: sample-10BT
+  text_field: text
+
+train:
+  steps: 200
+  lr: 0.0006
+  warmup_steps: 20
+  weight_decay: 0.1
+  grad_accum: 1
+  batch_size: 2
+  device: auto
+  amp: true
+  log_every: 20
+  ckpt_every: 100
+  ckpt_dir: artifacts/ckpt_pretrain
+  seed: 1337
+
+logging:
+  backend: tensorboard
+  logdir: runs
+  run_name: pretrain

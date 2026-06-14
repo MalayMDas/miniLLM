@@ -1,0 +1,5 @@
+{"messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "What is the capital of France?"}, {"role": "assistant", "content": "The capital of France is Paris."}]}
+{"messages": [{"role": "user", "content": "Add 2 and 3."}, {"role": "assistant", "content": "2 + 3 = 5."}]}
+{"messages": [{"role": "user", "content": "Say hello."}, {"role": "assistant", "content": "Hello! How can I help you today?"}]}
+{"messages": [{"role": "user", "content": "What color is the sky on a clear day?"}, {"role": "assistant", "content": "On a clear day the sky is blue."}]}
+{"messages": [{"role": "user", "content": "Name a programming language."}, {"role": "assistant", "content": "Python is a popular programming language."}]}

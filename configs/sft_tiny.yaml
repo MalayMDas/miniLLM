@@ -1,0 +1,39 @@
+# Instruct SFT (tiny, local-runnable). init_from points at a base-model checkpoint
+# (optional — omit to SFT from random init for a smoke test).
+model:
+  dim: 128
+  n_layers: 4
+  n_heads: 4
+  n_kv_heads: 2
+  max_seq_len: 256
+  dropout: 0.0
+
+tokenizer:
+  mode: bpe
+  path: artifacts/tok.json
+  vocab_size: 2000
+
+init_from: artifacts/ckpt_pretrain/step_0000200.pt   # base checkpoint (or null)
+
+data:
+  chat_jsonl: data/sample_chat.jsonl
+  max_len: 256
+
+train:
+  steps: 150
+  lr: 0.0003
+  warmup_steps: 15
+  weight_decay: 0.0
+  grad_accum: 1
+  batch_size: 4
+  device: auto
+  amp: true
+  log_every: 20
+  ckpt_every: 0
+  ckpt_dir: artifacts/ckpt_sft
+  seed: 1337
+
+logging:
+  backend: tensorboard
+  logdir: runs
+  run_name: sft

@@ -73,6 +73,10 @@ class BPETokenizer:
     def eos_id(self) -> int:
         return self._sid("<|eos|>")
 
+    def token_to_id(self, tok: str) -> int:
+        """Id of a (special) token. Used for chat/tool formatting."""
+        return self._sid(tok)
+
     # ---- api ------------------------------------------------------------
     def encode(self, text: str, add_bos: bool = False, add_eos: bool = False) -> List[int]:
         ids = self.tk.encode(text).ids
