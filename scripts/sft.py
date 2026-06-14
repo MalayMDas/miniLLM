@@ -28,6 +28,8 @@ from llmscratch.utils import (load_config, build_logger, run_id, pick_device,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/sft_tiny.yaml")
+    ap.add_argument("--init-from", default=None,
+                    help="base checkpoint path (overrides config init_from)")
     args = ap.parse_args()
     cfg = load_config(args.config)
     torch.manual_seed(cfg["train"]["seed"])
@@ -40,7 +42,7 @@ def main():
         n_heads=m["n_heads"], n_kv_heads=m["n_kv_heads"],
         max_seq_len=m["max_seq_len"], dropout=m["dropout"]))
 
-    init_from = cfg.get("init_from")
+    init_from = args.init_from or cfg.get("init_from")
     if init_from and Path(init_from).exists():
         load_checkpoint(init_from, model, map_location="cpu")
         print(f"initialized from base checkpoint: {init_from}")
@@ -56,7 +58,8 @@ def main():
     targs = TrainArgs(steps=t["steps"], lr=t["lr"], warmup_steps=t["warmup_steps"],
                       weight_decay=t["weight_decay"], grad_accum=t["grad_accum"],
                       device=device, amp=t["amp"], log_every=t["log_every"],
-                      ckpt_every=t["ckpt_every"], ckpt_dir=t["ckpt_dir"])
+                      ckpt_every=t["ckpt_every"], ckpt_dir=t["ckpt_dir"],
+                      time_budget_min=t.get("time_budget_min"))
     logger = build_logger(cfg.get("logging", {}), run_id(cfg, "sft"), cfg)
     Trainer(model, loader, targs, logger=logger).train()
 

@@ -215,7 +215,8 @@ Hand-built but standard components — each is a defensible choice:
 | `checkpoint.py` | Atomic save/load + `find_latest` for spot-safe resume |
 | `distributed.py` | torchrun-aware DDP setup + is_main gating (NCCL/gloo) |
 | **scripts/** | |
-| `demo.py` | **One-command local check** — runs every stage on CPU in seconds |
+| `run_all.py` | **Orchestrator** — runs every stage sequentially (`--smoke` or ~2h local) |
+| `demo.py` | One-command local check — runs every stage on CPU in seconds |
 | `train_tokenizer.py` | Train the byte-level BPE tokenizer from a config |
 | `smoke_train.py` | Minimal end-to-end train loop (cosine LR, logging, sampling) |
 | `pretrain.py` | Base pretraining — single-GPU or DDP via `torchrun`; auto-resume |

@@ -84,6 +84,18 @@ torchrun --nproc_per_node=8 scripts/pretrain.py --config configs/pretrain_300m.y
 python scripts/check_ddp.py     # verify the distributed path locally (2 CPU ranks)
 ```
 
+### Run the whole pipeline locally (~2h on a 6 GB GPU, e.g. RTX 3060)
+One orchestrator runs every stage sequentially on a ~25M model + real FineWeb-Edu data:
+```bash
+python scripts/run_all.py --smoke           # FIRST: verify wiring offline (~1 min)
+python scripts/run_all.py --pretrain-minutes 100   # the real ~2h run (needs internet)
+```
+It does **tokenizer → pretrain (time-boxed) → eval → SFT → quantize → sample**.
+**Review progress live** in a second terminal: `tensorboard --logdir runs` →
+http://localhost:6006 (loss, perplexity, lr, grad-norm, tokens/sec, sample text).
+Config: `configs/pretrain_local.yaml` (sized for 6 GB; if you hit CUDA OOM, drop
+`batch_size` to 4 / raise `grad_accum` to 16, or set `block_size: 256`).
+
 > The toy model is tiny and (in the demo) untrained, so generated *text* is
 > gibberish — by design. What's being verified is that every **mechanism** runs
 > correctly; scaling up the config + data is what produces quality.

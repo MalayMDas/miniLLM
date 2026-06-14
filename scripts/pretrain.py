@@ -47,6 +47,8 @@ def build_loader(cfg, tok, dist):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/pretrain_tiny.yaml")
+    ap.add_argument("--minutes", type=float, default=None,
+                    help="wall-clock training budget (overrides config time_budget_min)")
     args = ap.parse_args()
     cfg = load_config(args.config)
     dist = setup_distributed()
@@ -74,7 +76,8 @@ def main():
         steps=t["steps"], lr=t["lr"], warmup_steps=t["warmup_steps"],
         weight_decay=t["weight_decay"], grad_accum=t["grad_accum"],
         device=device, amp=t["amp"], log_every=t["log_every"],
-        ckpt_every=t["ckpt_every"], ckpt_dir=t["ckpt_dir"], is_main=dist.is_main)
+        ckpt_every=t["ckpt_every"], ckpt_dir=t["ckpt_dir"], is_main=dist.is_main,
+        time_budget_min=args.minutes if args.minutes is not None else t.get("time_budget_min"))
 
     logger = build_logger(cfg.get("logging", {}) if dist.is_main else {"backend": "none"},
                           run_id(cfg, "pretrain"), cfg)

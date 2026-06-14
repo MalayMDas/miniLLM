@@ -1,0 +1,43 @@
+# ~25M-param base model sized for a 6 GB GPU (RTX 3060), time-boxed for a ~2h run.
+# Real data (FineWeb-Edu stream). If you hit CUDA OOM: drop batch_size to 4 and
+# raise grad_accum to 16 (same effective batch), or lower block_size to 256.
+#   python scripts/pretrain.py --config configs/pretrain_local.yaml --minutes 100
+model:
+  dim: 512
+  n_layers: 8
+  n_heads: 8
+  n_kv_heads: 4
+  max_seq_len: 512
+  dropout: 0.0
+
+tokenizer:
+  mode: bpe
+  path: artifacts/tok_local.json
+  vocab_size: 8000
+
+data:
+  source: hf
+  block_size: 512
+  hf_dataset: HuggingFaceFW/fineweb-edu
+  hf_name: sample-10BT
+  text_field: text
+
+train:
+  steps: 1000000          # effectively unlimited; the time budget stops it
+  time_budget_min: 100    # wall-clock stop (leaves time for SFT/eval/quant in 2h)
+  lr: 0.0006
+  warmup_steps: 100
+  weight_decay: 0.1
+  grad_accum: 8           # effective batch = 8 * 8 = 64 sequences
+  batch_size: 8
+  device: auto
+  amp: true               # bf16 autocast (3060 supports it)
+  log_every: 20
+  ckpt_every: 500         # ~frequent so you keep progress if you stop early
+  ckpt_dir: artifacts/ckpt_pretrain_local
+  seed: 1337
+
+logging:
+  backend: tensorboard
+  logdir: runs
+  run_name: pretrain_local

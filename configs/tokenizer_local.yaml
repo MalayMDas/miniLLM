@@ -1,0 +1,14 @@
+# 8k byte-level BPE for the local 2-hour run (small vocab keeps the embedding small
+# so more of the 25M params go into transformer layers). Streams a FineWeb-Edu
+# sample (needs internet; cached after first run).
+#   python scripts/train_tokenizer.py --config configs/tokenizer_local.yaml
+tokenizer:
+  mode: bpe
+  path: artifacts/tok_local.json
+  vocab_size: 8000
+  min_frequency: 2
+  source: hf
+  hf_dataset: HuggingFaceFW/fineweb-edu
+  hf_name: sample-10BT
+  text_field: text
+  sample_docs: 10000

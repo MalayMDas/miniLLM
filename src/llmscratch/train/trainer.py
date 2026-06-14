@@ -41,6 +41,7 @@ class TrainArgs:
     amp: bool = True             # bf16 autocast on cuda
     device: str = "cuda"
     is_main: bool = True         # only the main DDP process logs / checkpoints
+    time_budget_min: Optional[float] = None  # wall-clock stop (e.g. for a 2h local run)
 
 
 def _infinite(loader):
@@ -95,7 +96,10 @@ class Trainer:
         a = self.a
         self.model.train()
         data = _infinite(self.loader)
+        run_start = time.perf_counter()
+        last_step = start_step
         for step in range(start_step, a.steps):
+            last_step = step
             lr = _lr_at(step, a)
             for g in self.opt.param_groups:
                 g["lr"] = lr
@@ -146,7 +150,13 @@ class Trainer:
                 save_checkpoint(Path(a.ckpt_dir) / f"step_{step:07d}.pt",
                                 self.raw_model, self.opt, step)
 
+            if a.time_budget_min is not None and (time.perf_counter() - run_start) / 60 >= a.time_budget_min:
+                if a.is_main:
+                    print(f"[time budget {a.time_budget_min} min reached at step {step}]")
+                break
+
+        final = last_step + 1
         if a.is_main:
-            save_checkpoint(Path(a.ckpt_dir) / f"step_{a.steps:07d}.pt",
-                            self.raw_model, self.opt, a.steps)
+            save_checkpoint(Path(a.ckpt_dir) / f"step_{final:07d}.pt",
+                            self.raw_model, self.opt, final)
         self.logger.close()
