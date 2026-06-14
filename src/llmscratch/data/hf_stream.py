@@ -23,7 +23,7 @@ class PackedHFStream(IterableDataset):
     def __init__(self, tokenizer, dataset_name: str, block_size: int,
                  split: str = "train", name: Optional[str] = None,
                  text_field: str = "text", seed: int = 0,
-                 buffer_docs: int = 1000):
+                 buffer_docs: int = 1000, rank: int = 0, world_size: int = 1):
         self.tok = tokenizer
         self.dataset_name = dataset_name
         self.name = name
@@ -32,16 +32,23 @@ class PackedHFStream(IterableDataset):
         self.block_size = block_size
         self.seed = seed
         self.buffer_docs = buffer_docs
+        self.rank = rank
+        self.world_size = world_size
 
     def _doc_iter(self) -> Iterator[str]:
         from datasets import load_dataset
         ds = load_dataset(self.dataset_name, name=self.name, split=self.split,
                           streaming=True)
         ds = ds.shuffle(seed=self.seed, buffer_size=self.buffer_docs)
-        # shard across DataLoader workers so they don't emit duplicate data
+        # shard across BOTH DDP ranks and DataLoader workers so no example is
+        # processed twice: global shard id = rank * num_workers + worker_id
         info = torch.utils.data.get_worker_info()
+        n_workers = info.num_workers if info else 1
+        worker_id = info.id if info else 0
+        n_shards = self.world_size * n_workers
+        shard_id = self.rank * n_workers + worker_id
         for i, ex in enumerate(ds):
-            if info is None or (i % info.num_workers) == info.id:
+            if (i % n_shards) == shard_id:
                 yield ex[self.text_field]
 
     def __iter__(self):

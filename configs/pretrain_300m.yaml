@@ -1,0 +1,41 @@
+# Real base-model pretraining (~300M params). Launch on a multi-GPU node:
+#   torchrun --nproc_per_node=8 scripts/pretrain.py --config configs/pretrain_300m.yaml
+# Train the 32k tokenizer on a data sample first, then point tokenizer.path at it.
+model:
+  dim: 1024
+  n_layers: 24
+  n_heads: 16
+  n_kv_heads: 4
+  max_seq_len: 2048
+  dropout: 0.0
+
+tokenizer:
+  mode: bpe
+  path: artifacts/tok_32k.json
+  vocab_size: 32000
+
+data:
+  source: hf
+  block_size: 2048
+  hf_dataset: HuggingFaceFW/fineweb-edu
+  hf_name: sample-10BT
+  text_field: text
+
+train:
+  steps: 50000           # ~ tune to your token budget (Chinchilla-ish for 300M)
+  lr: 0.0003
+  warmup_steps: 1000
+  weight_decay: 0.1
+  grad_accum: 8          # effective batch = batch_size * grad_accum * num_gpus
+  batch_size: 16
+  device: auto
+  amp: true              # bf16 autocast
+  log_every: 20
+  ckpt_every: 1000       # checkpoint to survive spot preemption
+  ckpt_dir: artifacts/ckpt_pretrain_300m
+  seed: 1337
+
+logging:
+  backend: wandb         # hosted tracking for a long real run
+  project: llm-from-scratch
+  run_name: pretrain-300m

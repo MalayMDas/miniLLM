@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import time
+from contextlib import nullcontext as _nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -39,6 +40,7 @@ class TrainArgs:
     ckpt_dir: str = "artifacts/ckpt"
     amp: bool = True             # bf16 autocast on cuda
     device: str = "cuda"
+    is_main: bool = True         # only the main DDP process logs / checkpoints
 
 
 def _infinite(loader):
@@ -70,6 +72,8 @@ class Trainer:
                  eval_fn: Optional[Callable[[], dict]] = None,
                  tokens_per_step: Optional[int] = None):
         self.model = model.to(args.device)
+        # unwrap DDP/FSDP for checkpointing + config access
+        self.raw_model = model.module if hasattr(model, "module") else model
         self.loader = train_loader
         self.a = args
         self.logger = logger or NoopLogger()
@@ -85,7 +89,7 @@ class Trainer:
             [{"params": decay, "weight_decay": args.weight_decay},
              {"params": no_decay, "weight_decay": 0.0}],
             lr=args.lr, betas=args.betas)
-        self.use_amp = args.amp and args.device == "cuda"
+        self.use_amp = args.amp and args.device.startswith("cuda")
 
     def train(self, start_step: int = 0) -> None:
         a = self.a
@@ -99,21 +103,27 @@ class Trainer:
             t0 = time.perf_counter()
             self.opt.zero_grad(set_to_none=True)
             loss_val = 0.0
-            for _ in range(a.grad_accum):
+            for micro in range(a.grad_accum):
                 x, y = next(data)
                 x, y = x.to(a.device), y.to(a.device)
-                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_amp):
-                    _, loss = self.model(x, y)
-                    loss = loss / a.grad_accum
-                loss.backward()
+                # under DDP, only sync grads on the last micro-step (avoids
+                # redundant all-reduce during accumulation)
+                last = micro == a.grad_accum - 1
+                sync_ctx = (self.model.no_sync() if (not last and hasattr(self.model, "no_sync"))
+                            else _nullcontext())
+                with sync_ctx:
+                    with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_amp):
+                        _, loss = self.model(x, y)
+                        loss = loss / a.grad_accum
+                    loss.backward()
                 loss_val += loss.item()
             gnorm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), a.grad_clip)
             self.opt.step()
-            if a.device == "cuda":
+            if a.device.startswith("cuda"):
                 torch.cuda.synchronize()
             dt = time.perf_counter() - t0
 
-            if step % a.log_every == 0 or step == a.steps - 1:
+            if a.is_main and (step % a.log_every == 0 or step == a.steps - 1):
                 metrics = {
                     "train/loss": loss_val,
                     "train/perplexity": math.exp(min(loss_val, 20)),
@@ -126,16 +136,17 @@ class Trainer:
                 self.logger.log_scalars(metrics, step)
                 print(f"step {step:5d} | loss {loss_val:.4f} | lr {lr:.2e}")
 
-            if a.eval_every and self.eval_fn and step > 0 and step % a.eval_every == 0:
+            if a.is_main and a.eval_every and self.eval_fn and step > 0 and step % a.eval_every == 0:
                 self.model.eval()
                 with torch.no_grad():
                     self.logger.log_scalars({f"eval/{k}": v for k, v in self.eval_fn().items()}, step)
                 self.model.train()
 
-            if a.ckpt_every and step > 0 and step % a.ckpt_every == 0:
+            if a.is_main and a.ckpt_every and step > 0 and step % a.ckpt_every == 0:
                 save_checkpoint(Path(a.ckpt_dir) / f"step_{step:07d}.pt",
-                                self.model, self.opt, step)
+                                self.raw_model, self.opt, step)
 
-        save_checkpoint(Path(a.ckpt_dir) / f"step_{a.steps:07d}.pt",
-                        self.model, self.opt, a.steps)
+        if a.is_main:
+            save_checkpoint(Path(a.ckpt_dir) / f"step_{a.steps:07d}.pt",
+                            self.raw_model, self.opt, a.steps)
         self.logger.close()
