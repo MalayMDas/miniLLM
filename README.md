@@ -1,9 +1,10 @@
 # LLM from Scratch (learning project)
 
 A modular, framework-first pipeline to build, train, evaluate, deploy, quantize,
-and *use* a small multimodal LLM. See [PLAN.md](PLAN.md) for the full roadmap and
-[ARCHITECTURE.md](ARCHITECTURE.md) for design decisions, the file-by-file map, the
-full local/cloud run guide, and how to tune common parameters.
+and *use* a small multimodal LLM. See [PLAN.md](PLAN.md) for the full roadmap,
+[ARCHITECTURE.md](ARCHITECTURE.md) for design decisions + the file-by-file map, and
+[RUNBOOK.md](RUNBOOK.md) for the step-by-step **cloud training run** (provision →
+tokenizer → pretrain → SFT → reasoning → eval → quantize/serve, with cost controls).
 
 ## Status
 **All stages built and locally runnable** (tiny configs; scale via YAML):
