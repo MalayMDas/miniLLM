@@ -104,6 +104,18 @@ python scripts/run_all.py --add-steps 2000         # 2000 more steps (fresh warm
 ```
 Re-running also auto-resumes after a crash/Ctrl-C (checkpoints every `ckpt_every`).
 
+### Watch progress & prompt your model
+```bash
+# check loss/throughput live from another terminal (reads runs/<run>/metrics.jsonl):
+python scripts/status.py --watch          # or: tensorboard --logdir runs  (graphs)
+
+# give your own prompt to a checkpoint (chat=instruct model, complete=base model):
+python scripts/chat.py --ckpt artifacts/ckpt_sft_local/step_XXXX.pt \
+    --tokenizer artifacts/tok_local.json --mode chat --prompt "Hello, who are you?"
+python scripts/chat.py --ckpt <base_ckpt> --tokenizer artifacts/tok_local.json --mode complete
+```
+Training logs now show `loss | lr | ms/step | tok/s | elapsed` per line.
+
 > The toy model is tiny and (in the demo) untrained, so generated *text* is
 > gibberish — by design. What's being verified is that every **mechanism** runs
 > correctly; scaling up the config + data is what produces quality.

@@ -162,6 +162,54 @@ Hand-built but standard components — each is a defensible choice:
 
 ---
 
+## 3A. Datasets & data formats per stage
+
+What data each stage consumes, the **on-disk/in-memory format**, and **how it becomes
+a training signal**. Two mechanics recur and are worth fixing in your head first:
+
+- **Packing (pretraining):** tokenized documents are concatenated into one long stream
+  and sliced into fixed windows of `block_size+1` tokens. For a window `w`, the model
+  input is `x = w[:-1]` and the target is `y = w[1:]` — i.e. *predict the next token at
+  every position*. Loss = cross-entropy(logits, y) over all positions. No labels needed
+  → **self-supervised**.
+- **Loss masking (post-training):** for chat/instruct/tool/reasoning data we set target
+  tokens we don't want to learn to `-100` (PyTorch `ignore_index`). So the model is
+  trained to *produce* assistant turns but not to reproduce the user's text or tool
+  outputs. Same next-token objective, just masked.
+
+| Stage | Dataset (example) | Format | How it trains the model |
+|---|---|---|---|
+| **Tokenizer** | FineWeb-Edu sample (stream) | raw text docs (`{"text": "..."}`) | feed raw strings to the byte-level BPE trainer to learn merges; **no model, no labels** — just vocabulary |
+| **Base pretrain** | `HuggingFaceFW/fineweb-edu` (sample-10BT), streamed | `{"text": "<web document>"}` | tokenize → `[BOS] doc [EOS] [BOS] doc …` → pack into `block_size` windows → next-token prediction over every token |
+| **Instruct SFT** | UltraChat / OpenHermes / Tulu subset (→ jsonl) | `{"messages": [{"role","content"}, …]}` | render ChatML with special tokens; **mask all but assistant tokens**; next-token loss on the assistant reply |
+| **Tool-use SFT** | xLAM / Hermes-function-calling (our `sample_tools_chat.jsonl`) | messages where assistant emits `<tool_call>{json}</tool_call>` and a `tool` role returns the result | same as SFT; assistant turns (incl. the tool call) are unmasked, `user`+`tool` turns masked → learns *when/how to call* + how to answer from the result |
+| **Reasoning — CoT distill** | OpenMathReasoning / OpenR1 traces | assistant content = `<think>{reasoning}</think>{answer}` | SFT on the trace; loss on the whole assistant turn → learns to reason step-by-step then answer |
+| **Reasoning — GRPO (RL)** | math prompts with **verifiable** answers (GSM8K-style) | `{question, gold_answer}` — *no target completion* | sample G completions per prompt → reward = is-answer-correct → group-normalized advantage → policy-gradient update (online, no labels to imitate) |
+| **Multimodal** | LAION/COCO/LLaVA mixture (our synthetic color set offline) | `{image: tensor[3,H,W], text}`; prompt holds `<image>` placeholder tokens | image → encoder(ViT/SigLIP) → projector → embeddings **spliced into the `<image>` positions**; next-token loss on the caption/answer (assistant-masked). Phase 1 trains projector only; phase 2 + LLM |
+| **Evaluation** | HellaSwag, OpenBookQA, GSM8K, BFCL, VQAv2 | see below | **no training** — measurement only |
+
+**Concrete shapes**
+
+- *Pretrain window* (`block_size=4` toy): tokens `[the, cat, sat, on, mat]` →
+  `x=[the,cat,sat,on]`, `y=[cat,sat,on,mat]`.
+- *SFT (ChatML, masked)*: `<bos> <im_start>user\nHi<im_end> <im_start>assistant\nHello<im_end> <eos>`
+  — labels are `-100` everywhere except the `assistant\nHello<im_end>` span, so only the
+  reply contributes to the loss. (`data/chat.py:render_chat`)
+- *Multimodal*: `input_ids = [BOS, <image>×N, "what color?", …, assistant, "a red image", EOS]`;
+  the `N` `<image>` rows of the embedding matrix are overwritten by the projected patch
+  embeddings before the decoder runs. (`vision/multimodal.py`)
+
+**Eval data formats** (all scored locally — `eval/tasks/`):
+
+| Benchmark | Format | Scoring |
+|---|---|---|
+| HellaSwag / OpenBookQA | `{question, choices[], answer:int}` | pick the choice with highest length-normalized log-likelihood (`acc_norm`) |
+| GSM8K | `{question, answer:"… #### 42"}` | few-shot CoT generate → extract final number → exact match |
+| BFCL | `{question, tools[], gold:{name,arguments}}` | parse emitted `<tool_call>` → AST/argument match vs gold |
+| VQAv2 | `{image, question, answers:[10 strings]}` | generate → VQA soft-accuracy `min(matches/3, 1)` |
+
+---
+
 ## 4. File-by-file map
 
 | Path | What it does |
@@ -227,6 +275,8 @@ Hand-built but standard components — each is a defensible choice:
 | `benchmark.py` | Real benchmarks (HellaSwag/OpenBookQA/GSM8K/BFCL) — local, no API |
 | `lm_eval_run.py` | Run EleutherAI lm-eval-harness (official, comparable numbers) |
 | `quantize.py` | Quantize a checkpoint; report size + perplexity delta |
+| `chat.py` | **Prompt your own model** — interactive REPL or `--prompt`; chat/complete modes |
+| `status.py` | Check live loss/throughput from `metrics.jsonl` (no browser); `--watch` |
 | `check_ddp.py` | Verify the DDP path locally (2 ranks, CPU, FileStore) |
 | **tests/** (27 passing) | |
 | `test_tokenizer.py` | Round-trip + compression + special-token tests |

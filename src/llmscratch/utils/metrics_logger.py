@@ -33,13 +33,27 @@ class NoopLogger(Logger):
 
 class TensorBoardLogger(Logger):
     def __init__(self, logdir: str | Path):
+        import json
         from torch.utils.tensorboard import SummaryWriter
+        self._json = json
         self.logdir = str(logdir)
         Path(self.logdir).mkdir(parents=True, exist_ok=True)
         self.w = SummaryWriter(self.logdir)
+        # plain-text mirror so you can tail loss live without opening TensorBoard
+        self._jsonl = open(Path(self.logdir) / "metrics.jsonl", "a", encoding="utf-8")
+
+    def _write_jsonl(self, mapping: Dict[str, float], step: int) -> None:
+        self._jsonl.write(self._json.dumps({"step": step, **mapping}) + "\n")
+        self._jsonl.flush()                  # flush so `tail` sees it immediately
 
     def log_scalar(self, tag, value, step):
         self.w.add_scalar(tag, value, step)
+        self._write_jsonl({tag: value}, step)
+
+    def log_scalars(self, mapping, step):
+        for k, v in mapping.items():
+            self.w.add_scalar(k, v, step)
+        self._write_jsonl(dict(mapping), step)
 
     def log_text(self, tag, text, step):
         # markdown code-fence so newlines render in the TB Text tab
@@ -53,6 +67,7 @@ class TensorBoardLogger(Logger):
     def close(self):
         self.w.flush()
         self.w.close()
+        self._jsonl.close()
 
 
 class WandbLogger(Logger):

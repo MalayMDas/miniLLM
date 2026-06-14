@@ -145,10 +145,16 @@ class Trainer:
                     "train/grad_norm": float(gnorm),
                     "perf/step_time_ms": dt * 1e3,
                 }
+                tps = 0.0
                 if self.tokens_per_step:
-                    metrics["perf/tokens_per_sec"] = self.tokens_per_step * a.grad_accum / max(dt, 1e-6)
+                    tps = self.tokens_per_step * a.grad_accum / max(dt, 1e-6)
+                    metrics["perf/tokens_per_sec"] = tps
                 self.logger.log_scalars(metrics, step)
-                print(f"step {step:5d} | loss {loss_val:.4f} | lr {lr:.2e}")
+                elapsed = time.perf_counter() - run_start
+                mm, ss = divmod(int(elapsed), 60)
+                tps_str = f"{tps:6.0f} tok/s | " if tps else ""
+                print(f"step {step:6d} | loss {loss_val:.4f} | lr {lr:.2e} | "
+                      f"{dt*1e3:5.0f} ms/step | {tps_str}elapsed {mm:02d}:{ss:02d}")
 
             if a.is_main and a.eval_every and self.eval_fn and step > 0 and step % a.eval_every == 0:
                 self.model.eval()
