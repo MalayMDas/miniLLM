@@ -1,0 +1,14 @@
+# Pinned, reproducible deps for cloud runs. Generated from a known-good env.
+# Regenerate with: pip freeze > requirements.lock  (then trim to direct deps).
+#
+# NOTE on torch + CUDA: on Linux, `pip install torch==2.5.1` pulls the CUDA build
+# by default (the gotcha is only CPU-only wheels on some platforms). Inside the
+# Dockerfile the base image already provides a matching CUDA torch, so this pin is
+# satisfied and not reinstalled.
+torch==2.5.1
+numpy==2.0.1
+pyyaml==6.0.3
+tokenizers==0.21.4
+datasets==5.0.0
+tqdm==4.67.1
+tensorboard==2.20.0

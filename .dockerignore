@@ -1,0 +1,33 @@
+# Keep the build context (and image) lean and reproducible.
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Regenerated inside the container / not needed for training:
+runs/
+wandb/
+artifacts/
+checkpoints/
+*.ckpt
+*.pt
+*.bin
+*.safetensors
+*.gguf
+
+# Large/local data caches (real data is streamed from HF at run time):
+data/cache/
+data/*.arrow
+
+# Local env / editor / secrets:
+.venv/
+venv/
+.vscode/
+.idea/
+.env
+*.env
+*.key
+service-account*.json

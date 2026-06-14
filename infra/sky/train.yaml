@@ -1,0 +1,34 @@
+# Optional launcher — SkyPilot. The "production feel, simple code" middle ground:
+# no cluster to manage, finds the cheapest available (spot) GPU across clouds,
+# syncs this repo, and (with `sky jobs launch`) auto-recovers on preemption.
+#
+# Quick start (after `pip install "skypilot[aws,gcp,runpod]"` and configuring a cloud):
+#   sky launch -c llm infra/sky/train.yaml            # interactive dev cluster
+#   sky jobs launch -n llm-train infra/sky/train.yaml # managed spot job w/ auto-resume
+#   sky down llm                                      # tear down (stop paying)
+#
+# Decision: prefer this over Kubeflow/Airflow for a single-team training project —
+# those add a cluster you must operate. Reach for them only with many pipelines/teams.
+
+name: llm-from-scratch
+
+resources:
+  # Ask for the cheapest of these; drop to 1 GPU to keep cost tiny while iterating.
+  accelerators: {A100:8, A100-80GB:8, A100:1}
+  use_spot: true            # cheapest; pair with `sky jobs launch` for auto-recovery
+  disk_size: 200
+
+workdir: .                  # syncs the repo to the remote box
+
+setup: |
+  pip install --no-cache-dir -r requirements.lock
+  pip install --no-cache-dir -e .
+
+run: |
+  python - <<'PY'
+  import torch; print("GPUs:", torch.cuda.device_count(), torch.cuda.get_device_name(0))
+  PY
+  # Sanity run today; swap --config for a real pretrain config later, e.g.
+  #   torchrun --nproc_per_node=8 scripts/pretrain.py --config configs/pretrain.yaml
+  python scripts/train_tokenizer.py --config configs/model_tiny.yaml
+  python scripts/smoke_train.py     --config configs/model_tiny.yaml
