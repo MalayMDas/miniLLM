@@ -6,8 +6,21 @@ and *use* a small multimodal LLM. See [PLAN.md](PLAN.md) for the full roadmap an
 full local/cloud run guide, and how to tune common parameters.
 
 ## Status
-**Stage 0–2 scaffolded (local-runnable):** tokenizer (byte + byte-level BPE),
-compact Llama-style decoder, packed text dataset, end-to-end smoke-train, tests.
+**All stages built and locally runnable** (tiny configs; scale via YAML):
+tokenizer (byte + byte-level BPE) · Llama-style decoder · base pretraining
+(local or HF streaming, spot-safe resume) · instruct SFT · reasoning (CoT + GRPO)
+· tool use · evaluation (perplexity + multiple-choice) · OpenAI-compatible serving
+· int8 quantization · multimodal vision toggle (from-scratch ViT ↔ SigLIP) · apps
+(RAG, ReAct agent). **27 tests passing.** Cloud scaffolding: Dockerfile, lockfile,
+SkyPilot, setup script. Remaining work is *scaling up* (real data + multi-GPU), not
+new components.
+
+### Stage entrypoints
+```bash
+python scripts/pretrain.py --config configs/pretrain_tiny.yaml   # base model
+python scripts/sft.py      --config configs/sft_tiny.yaml        # instruct
+python scripts/quantize.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt
+```
 
 ## Quickstart (CPU or small GPU, zero downloads)
 

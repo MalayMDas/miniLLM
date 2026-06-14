@@ -5,6 +5,11 @@ and *use* a small multimodal LLM. **Framework-first** (PyTorch + HuggingFace
 ecosystem), targeting **< $500** on rented multi-GPU, with **per-stage runs that fit
 within ~a day**.
 
+> **Build status:** every stage below is implemented and runs locally at tiny scale
+> (27 tests passing). What remains is *scaling up* — real data volume, multi-GPU
+> (FSDP/DeepSpeed), and the actual cloud training run — not new components. See
+> `ARCHITECTURE.md` for the file-by-file map.
+
 ---
 
 ## 0. Reality check & headline decisions

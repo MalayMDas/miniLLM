@@ -40,7 +40,8 @@ alternatives, and the trade-offs** — written so you can defend every decision.
 
 **Stage roadmap** (see `PLAN.md`): data → tokenizer → base pretrain → vision (toggle)
 → instruct (SFT) → reasoning (CoT/GRPO) → tools → eval → serve → quantize → apps.
-Stages 0–2 + cloud scaffolding are built; the rest are planned modules.
+**All stages are implemented and locally runnable at tiny scale (27 tests passing);**
+remaining work is scaling up (real data volume + multi-GPU), not new components.
 
 ---
 
@@ -141,14 +142,48 @@ Hand-built but standard components — each is a defensible choice:
 | `decoder.py` | Llama-style decoder: RMSNorm, RoPE, SwiGLU, GQA, SDPA, generate(), `ModelConfig` |
 | **src/llmscratch/data/** | |
 | `text.py` | `iter_local_lines`, `encode_corpus`, `PackedDataset` (next-token windows) |
+| `chat.py` | ChatML rendering + assistant-only loss masking; inference prompt builder |
+| `hf_stream.py` | Streaming HF corpus (FineWeb-Edu) packed into blocks (`datasets`) |
+| **src/llmscratch/train/** | |
+| `trainer.py` | Reusable loop: grad accum, cosine LR, clip, bf16, eval/ckpt hooks |
+| **src/llmscratch/align/** | |
+| `sft.py` | SFTDataset (loss-masked) + dynamic-pad collate + jsonl loader |
+| `reasoning.py` | `<think>` CoT trace formatting + answer extraction |
+| `grpo.py` | Group Relative Policy Optimization (verifiable-reward RL) |
+| **src/llmscratch/tools/** | |
+| `registry.py` | Tool/ToolRegistry + safe AST calculator |
+| `parser.py` | Parse/execute `<tool_call>` JSON; tools system prompt |
+| **src/llmscratch/eval/** | |
+| `scoring.py` | `continuation_logprob` / `sequence_nll` (loglikelihood primitive) |
+| `benchmarks.py` | Perplexity + length-normalized multiple-choice accuracy |
+| **src/llmscratch/serve/** | |
+| `generate.py` | Sampling (top-k/top-p, stop tokens) + `generate_chat` |
+| `api.py` | OpenAI-compatible FastAPI (`/v1/chat/completions`); vLLM-contract |
+| **src/llmscratch/quantize/** | |
+| `dynamic_int8.py` | Dynamic int8 quantization + serialized-size measurement |
+| **src/llmscratch/vision/** | |
+| `vit.py` | From-scratch Vision Transformer (patch embed + encoder) |
+| `encoder.py` | **Toggle**: from-scratch ViT ↔ frozen pretrained SigLIP |
+| `projector.py` | MLP vision→LLM dim (LLaVA phase-1 trainable) |
+| `multimodal.py` | Splices projected patches into `<image>` positions |
+| **src/llmscratch/apps/** | |
+| `rag/` | Hashing embedder + cosine VectorStore + grounded RAG pipeline |
+| `agent/` | Model-agnostic ReAct loop driving the tool registry |
 | **src/llmscratch/utils/** | |
-| `metrics_logger.py` | Pluggable logger: TensorBoard / W&B / Noop + `build_logger` factory |
+| `metrics_logger.py` | Pluggable logger: TensorBoard / W&B / Noop + `build_logger` |
+| `config.py` | Config load + run provenance (`run_id` = gitSHA+cfgHash) |
+| `checkpoint.py` | Atomic save/load + `find_latest` for spot-safe resume |
 | **scripts/** | |
 | `train_tokenizer.py` | Train the byte-level BPE tokenizer from a config |
-| `smoke_train.py` | End-to-end train loop (cosine LR, grad-clip, logging, sampling) |
-| **tests/** | |
+| `smoke_train.py` | Minimal end-to-end train loop (cosine LR, logging, sampling) |
+| `pretrain.py` | Base pretraining (local or HF stream; auto-resume) |
+| `sft.py` | Instruct SFT from a base checkpoint |
+| `quantize.py` | Quantize a checkpoint; report size + perplexity delta |
+| **tests/** (27 passing) | |
 | `test_tokenizer.py` | Round-trip + compression + special-token tests |
 | `test_model.py` | Forward shapes, GQA divisibility, generation, **causality** |
+| `test_tools.py` `test_eval.py` | Tool calculator/parser; perplexity/MCQ scoring |
+| `test_apps.py` `test_vision.py` `test_reasoning.py` | RAG/agent; multimodal; CoT/GRPO |
 | **infra/** | |
 | `infra/cloud_setup.sh` | No-Docker fast path: pinned install + GPU sanity + smoke-train |
 | `infra/sky/train.yaml` | SkyPilot launcher (cheapest spot GPU, managed auto-resume) |
