@@ -188,6 +188,12 @@ a training signal**. Two mechanics recur and are worth fixing in your head first
 | **Multimodal** | LAION/COCO/LLaVA mixture (our synthetic color set offline) | `{image: tensor[3,H,W], text}`; prompt holds `<image>` placeholder tokens | image → encoder(ViT/SigLIP) → projector → embeddings **spliced into the `<image>` positions**; next-token loss on the caption/answer (assistant-masked). Phase 1 trains projector only; phase 2 + LLM |
 | **Evaluation** | HellaSwag, OpenBookQA, GSM8K, BFCL, VQAv2 | see below | **no training** — measurement only |
 
+**Streaming vs. offline (pretrain):** by default the corpus is **streamed**
+(`source: hf`, `streaming=True`) — TB-scale data is fetched shard-by-shard *during*
+training, not downloaded upfront (hence occasional CDN retry warnings). `prepare_data.py`
++ `source: bin` pre-tokenizes a fixed sample to a local uint16 file for a fully offline
+run (random windows, no network, trivial resume).
+
 **Concrete shapes**
 
 - *Pretrain window* (`block_size=4` toy): tokens `[the, cat, sat, on, mat]` →
@@ -230,6 +236,7 @@ a training signal**. Two mechanics recur and are worth fixing in your head first
 | `text.py` | `iter_local_lines`, `encode_corpus`, `PackedDataset` (next-token windows) |
 | `chat.py` | ChatML rendering + assistant-only loss masking; inference prompt builder |
 | `hf_stream.py` | Streaming HF corpus (FineWeb-Edu) packed into blocks; `skip_blocks` resumes through the corpus (`datasets`) |
+| `bin_data.py` | Train from a pre-tokenized local `.bin` (offline, random windows, no network) |
 | **src/llmscratch/train/** | |
 | `trainer.py` | Reusable loop: grad accum, cosine LR, clip, bf16, eval/ckpt hooks |
 | **src/llmscratch/align/** | |
@@ -267,6 +274,7 @@ a training signal**. Two mechanics recur and are worth fixing in your head first
 | `run_all.py` | **Orchestrator** — runs every stage sequentially (`--smoke` or ~2h local) |
 | `demo.py` | One-command local check — runs every stage on CPU in seconds |
 | `train_tokenizer.py` | Train the byte-level BPE tokenizer from a config |
+| `prepare_data.py` | Pre-download + tokenize a sample to a local `.bin` (offline training) |
 | `smoke_train.py` | Minimal end-to-end train loop (cosine LR, logging, sampling) |
 | `pretrain.py` | Base pretraining — single-GPU or DDP via `torchrun`; auto-resume |
 | `sft.py` | Instruct/tool SFT from a base checkpoint |

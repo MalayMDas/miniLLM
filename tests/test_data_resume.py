@@ -34,3 +34,17 @@ def test_skip_zero_is_noop():
 def test_skip_beyond_end_yields_nothing():
     full = _stream(0)
     assert _stream(len(full) + 100) == []
+
+
+def test_bin_dataset_yields_windows(tmp_path):
+    import numpy as np
+    from llmscratch.data.bin_data import BinDataset
+    p = tmp_path / "toy.bin"
+    np.arange(1000, dtype=np.uint16).tofile(p)
+    ds = BinDataset(p, block_size=16, seed=0)
+    it = iter(ds)
+    for _ in range(5):                       # infinite stream of random windows
+        x, y = next(it)
+        assert x.shape == (16,) and y.shape == (16,)
+        # y is x shifted by one within a contiguous window
+        assert int(y[0]) == int(x[1])

@@ -58,6 +58,14 @@ def build_loader(cfg, tok, dist, skip_blocks: int = 0):
                               rank=dist.rank, world_size=dist.world_size,
                               skip_blocks=skip_blocks)   # resume continues through corpus
         return DataLoader(ds, batch_size=bs)   # IterableDataset: shards itself by rank/worker
+    elif d["source"] == "bin":
+        # offline: pre-tokenized local .bin (no network). Random windows => resume
+        # naturally continues sampling the full corpus; skip_blocks not needed.
+        from llmscratch.data.bin_data import BinDataset
+        ds = BinDataset(d["bin_path"], d["block_size"],
+                        seed=cfg["train"].get("seed", 0), rank=dist.rank,
+                        world_size=dist.world_size)
+        return DataLoader(ds, batch_size=bs)
     raise ValueError(f"unknown data.source: {d['source']}")
 
 

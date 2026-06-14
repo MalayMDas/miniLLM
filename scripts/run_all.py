@@ -58,9 +58,16 @@ def main() -> None:
     ap.add_argument("--pretrain-minutes", type=float, default=100.0)
     ap.add_argument("--add-steps", type=int, default=None,
                     help="resume the existing model and train this many MORE steps")
+    ap.add_argument("--offline", action="store_true",
+                    help="pre-download a local .bin once, then train with NO network "
+                         "(avoids streaming timeouts)")
+    ap.add_argument("--prep-tokens", type=int, default=100_000_000,
+                    help="tokens to pre-download for --offline")
     args = ap.parse_args()
 
     tok_cfg, pre_cfg, sft_cfg, tok_path, ckpt_dir = SMOKE if args.smoke else LOCAL
+    if args.offline and not args.smoke:
+        pre_cfg = "configs/pretrain_local_offline.yaml"
     total0 = time.perf_counter()
     print("TIP: in another terminal run `tensorboard --logdir runs` to watch progress.")
 
@@ -69,6 +76,15 @@ def main() -> None:
         print(f"[1/6] tokenizer exists ({tok_path}) - skipping")
     else:
         run("1/6 tokenizer", [PY, "scripts/train_tokenizer.py", "--config", tok_cfg])
+
+    # 1b. offline: pre-download the corpus to a local .bin once (no network later)
+    if args.offline and not args.smoke:
+        bin_path = ROOT / "data" / "fineweb_local.bin"
+        if bin_path.exists():
+            print(f"[1b] local corpus exists ({bin_path.name}) - skipping prep")
+        else:
+            run("1b prepare-data", [PY, "scripts/prepare_data.py",
+                                    "--tokenizer", tok_path, "--tokens", str(args.prep_tokens)])
 
     # 2. base pretraining (resumes from latest ckpt automatically if present)
     pre_cmd = [PY, "scripts/pretrain.py", "--config", pre_cfg]

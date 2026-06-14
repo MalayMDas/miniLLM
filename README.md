@@ -116,6 +116,22 @@ python scripts/chat.py --ckpt <base_ckpt> --tokenizer artifacts/tok_local.json -
 ```
 Training logs now show `loss | lr | ms/step | tok/s | elapsed` per line.
 
+### Streaming vs. offline data
+By default pretraining **streams** FineWeb-Edu (`streaming=True`) — the corpus is
+~TB-scale, so it is *not* downloaded upfront; shards are fetched lazily as training
+consumes them. That means you may see transient `Read timed out … Retrying` warnings
+from the HF CDN mid-run; they auto-retry and training continues. To make them rarer:
+`pip install hf_xet` (faster transfer) and/or `set HF_HUB_DOWNLOAD_TIMEOUT=60`.
+
+For a **fully offline** run (download once, then zero network during training):
+```bash
+python scripts/prepare_data.py --tokenizer artifacts/tok_local.json --tokens 100000000
+python scripts/run_all.py --offline --pretrain-minutes 100
+# (run_all --offline does the prepare step for you the first time)
+```
+This writes `data/fineweb_local.bin` (uint16) and trains from it via `data.source: bin`
+(random windows over the local corpus) — no streaming, no timeouts, trivial resume.
+
 > The toy model is tiny and (in the demo) untrained, so generated *text* is
 > gibberish — by design. What's being verified is that every **mechanism** runs
 > correctly; scaling up the config + data is what produces quality.
