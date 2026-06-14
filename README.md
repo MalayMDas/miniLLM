@@ -1,7 +1,9 @@
 # LLM from Scratch (learning project)
 
 A modular, framework-first pipeline to build, train, evaluate, deploy, quantize,
-and *use* a small multimodal LLM. See [PLAN.md](PLAN.md) for the full roadmap.
+and *use* a small multimodal LLM. See [PLAN.md](PLAN.md) for the full roadmap and
+[ARCHITECTURE.md](ARCHITECTURE.md) for design decisions, the file-by-file map, the
+full local/cloud run guide, and how to tune common parameters.
 
 ## Status
 **Stage 0–2 scaffolded (local-runnable):** tokenizer (byte + byte-level BPE),
