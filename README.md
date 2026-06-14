@@ -19,7 +19,11 @@ python scripts/train_tokenizer.py --config configs/model_tiny.yaml
 # 2. smoke-train: overfit the tiny corpus end-to-end (loss should drop fast)
 python scripts/smoke_train.py --config configs/model_tiny.yaml
 
-# 3. SEE the tokenizer tradeoff (UTF-8 bytes vs byte-level BPE)
+# 3. watch progress in TensorBoard (loss, perplexity, lr, grad-norm, tok/s, samples)
+tensorboard --logdir runs
+# open http://localhost:6006   (Scalars + Text tabs)
+
+# 4. SEE the tokenizer tradeoff (UTF-8 bytes vs byte-level BPE)
 python -m llmscratch.tokenizer.compare --bpe artifacts/tok.json
 
 # tests
