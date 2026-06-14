@@ -67,3 +67,14 @@ def test_encoder_toggle_from_scratch():
     enc = build_vision_encoder({"mode": "from_scratch", "image_size": 16,
                                 "patch_size": 8, "dim": 32, "depth": 1, "heads": 2})
     assert enc.num_tokens == 4 and enc.out_dim == 32
+
+
+def test_synthetic_vlm_dataset_shapes():
+    from llmscratch.vision import SyntheticVLMDataset
+    tok = ByteTokenizer()
+    num_tokens = 4
+    ds = SyntheticVLMDataset(tok, tok.token_to_id("<image>"), num_tokens, image_size=16)
+    x, y, img = ds[0]
+    assert img.shape == (3, 16, 16)
+    assert int((x == tok.token_to_id("<image>")).sum()) == num_tokens   # placeholders present
+    assert x.shape == y.shape
