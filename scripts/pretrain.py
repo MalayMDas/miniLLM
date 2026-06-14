@@ -49,6 +49,9 @@ def main():
     ap.add_argument("--config", default="configs/pretrain_tiny.yaml")
     ap.add_argument("--minutes", type=float, default=None,
                     help="wall-clock training budget (overrides config time_budget_min)")
+    ap.add_argument("--add-steps", type=int, default=None,
+                    help="resume the latest checkpoint and train this many MORE steps "
+                         "(fresh warmup+cosine over the new steps)")
     args = ap.parse_args()
     cfg = load_config(args.config)
     dist = setup_distributed()
@@ -92,6 +95,13 @@ def main():
         start = load_checkpoint(latest, trainer.raw_model, trainer.opt, map_location=device)
         if dist.is_main:
             print(f"resumed from {latest} at step {start}")
+
+    # extend a (possibly finished) model: train N more steps with a fresh schedule
+    if args.add_steps is not None:
+        targs.steps = start + args.add_steps
+        targs.lr_offset = start
+        if dist.is_main:
+            print(f"extending: training {args.add_steps} more steps -> target {targs.steps}")
 
     trainer.train(start_step=start)
     cleanup()

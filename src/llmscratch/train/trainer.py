@@ -42,6 +42,8 @@ class TrainArgs:
     device: str = "cuda"
     is_main: bool = True         # only the main DDP process logs / checkpoints
     time_budget_min: Optional[float] = None  # wall-clock stop (e.g. for a 2h local run)
+    lr_offset: int = 0           # anchor warmup+cosine here (set to resume step when
+                                 # extending a finished model, so it gets a fresh schedule)
 
 
 def _infinite(loader):
@@ -59,9 +61,12 @@ def _infinite(loader):
 
 
 def _lr_at(step: int, a: TrainArgs) -> float:
-    if step < a.warmup_steps:
-        return a.lr * (step + 1) / max(1, a.warmup_steps)
-    prog = (step - a.warmup_steps) / max(1, a.steps - a.warmup_steps)
+    # schedule is measured from lr_offset (0 normally; = resume step when extending)
+    s = step - a.lr_offset
+    total = a.steps - a.lr_offset
+    if s < a.warmup_steps:
+        return a.lr * (s + 1) / max(1, a.warmup_steps)
+    prog = (s - a.warmup_steps) / max(1, total - a.warmup_steps)
     prog = min(1.0, prog)
     coeff = 0.5 * (1 + math.cos(math.pi * prog))
     return a.lr * (a.min_lr_ratio + (1 - a.min_lr_ratio) * coeff)
@@ -94,6 +99,11 @@ class Trainer:
 
     def train(self, start_step: int = 0) -> None:
         a = self.a
+        if start_step >= a.steps:
+            if a.is_main:
+                print(f"already at step {start_step} >= target {a.steps}; nothing to do. "
+                      f"Use --add-steps to train further.")
+            return
         self.model.train()
         data = _infinite(self.loader)
         run_start = time.perf_counter()

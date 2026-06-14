@@ -96,6 +96,14 @@ http://localhost:6006 (loss, perplexity, lr, grad-norm, tokens/sec, sample text)
 Config: `configs/pretrain_local.yaml` (sized for 6 GB; if you hit CUDA OOM, drop
 `batch_size` to 4 / raise `grad_accum` to 16, or set `block_size: 256`).
 
+**Restart / train an existing model more** (unattended — resumes model + optimizer
+state, then re-runs eval/SFT/quantize on the new checkpoint):
+```bash
+python scripts/run_all.py --pretrain-minutes 30    # 30 more wall-clock minutes
+python scripts/run_all.py --add-steps 2000         # 2000 more steps (fresh warmup+cosine)
+```
+Re-running also auto-resumes after a crash/Ctrl-C (checkpoints every `ckpt_every`).
+
 > The toy model is tiny and (in the demo) untrained, so generated *text* is
 > gibberish — by design. What's being verified is that every **mechanism** runs
 > correctly; scaling up the config + data is what produces quality.

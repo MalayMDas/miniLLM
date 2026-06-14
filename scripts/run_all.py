@@ -4,6 +4,12 @@
     python scripts/run_all.py --pretrain-minutes 100
     python scripts/run_all.py --smoke          # tiny + offline, ~1 min (verifies wiring)
 
+RESTART / train more (unattended): just run it again. `pretrain.py` auto-resumes from
+the latest checkpoint (model + optimizer state), trains further, then every downstream
+stage re-runs on the new checkpoint. Two ways to say "train more":
+    python scripts/run_all.py --pretrain-minutes 30    # 30 more wall-clock minutes
+    python scripts/run_all.py --add-steps 2000         # 2000 more steps (fresh warmup+cosine)
+
 Stages, in order:  tokenizer -> pretrain (time-boxed) -> eval -> SFT -> quantize ->
 sample. Each runs as a subprocess so output streams live and import-order is clean.
 
@@ -50,6 +56,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--smoke", action="store_true", help="tiny offline run to verify wiring")
     ap.add_argument("--pretrain-minutes", type=float, default=100.0)
+    ap.add_argument("--add-steps", type=int, default=None,
+                    help="resume the existing model and train this many MORE steps")
     args = ap.parse_args()
 
     tok_cfg, pre_cfg, sft_cfg, tok_path, ckpt_dir = SMOKE if args.smoke else LOCAL
@@ -62,9 +70,11 @@ def main() -> None:
     else:
         run("1/6 tokenizer", [PY, "scripts/train_tokenizer.py", "--config", tok_cfg])
 
-    # 2. base pretraining (time-boxed)
+    # 2. base pretraining (resumes from latest ckpt automatically if present)
     pre_cmd = [PY, "scripts/pretrain.py", "--config", pre_cfg]
-    if not args.smoke:
+    if args.add_steps is not None:
+        pre_cmd += ["--add-steps", str(args.add_steps)]   # explicit "train N more"
+    elif not args.smoke:
         pre_cmd += ["--minutes", str(args.pretrain_minutes)]
     run("2/6 pretrain", pre_cmd)
 
