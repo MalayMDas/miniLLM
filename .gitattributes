@@ -1,0 +1,18 @@
+# Normalize line endings: LF in the repo for everything text.
+# Critical for a Windows-dev -> Linux-cloud workflow — a CRLF in a .sh breaks
+# bash on Linux ("bad interpreter: bash^M"), and CRLF in a Dockerfile/Makefile
+# can break builds.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF (none yet, but future-proof):
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary artifacts: never touch.
+*.png binary
+*.jpg binary
+*.gguf binary
+*.pt binary
+*.bin binary
+*.safetensors binary
+*.arrow binary
