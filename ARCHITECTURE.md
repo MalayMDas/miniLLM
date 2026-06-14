@@ -155,6 +155,7 @@ Hand-built but standard components — each is a defensible choice:
 ### 3.9 Spot instances + checkpointing (cost strategy)
 - **Why:** spot GPUs are ~2–3× cheaper; pair with frequent checkpointing + auto-resume to survive preemption. Keeps the project under budget.
 - **Cons:** jobs can be killed anytime ⇒ checkpointing is mandatory, not optional.
+- **Resume is complete:** model + optimizer state + step + **data position** (`skip_blocks`) all restore, so a relaunched run continues through the corpus, not from the top. `--add-steps N` trains N more with a fresh warmup+cosine.
 
 ### 3.10 Line-ending normalization (`.gitattributes`)
 - **Why:** dev-on-Windows → train-on-Linux; a CRLF in a `.sh` breaks bash (`bad interpreter: bash^M`). Forcing LF prevents a classic, hard-to-spot failure.
@@ -180,7 +181,7 @@ Hand-built but standard components — each is a defensible choice:
 | **src/llmscratch/data/** | |
 | `text.py` | `iter_local_lines`, `encode_corpus`, `PackedDataset` (next-token windows) |
 | `chat.py` | ChatML rendering + assistant-only loss masking; inference prompt builder |
-| `hf_stream.py` | Streaming HF corpus (FineWeb-Edu) packed into blocks (`datasets`) |
+| `hf_stream.py` | Streaming HF corpus (FineWeb-Edu) packed into blocks; `skip_blocks` resumes through the corpus (`datasets`) |
 | **src/llmscratch/train/** | |
 | `trainer.py` | Reusable loop: grad accum, cosine LR, clip, bf16, eval/ckpt hooks |
 | **src/llmscratch/align/** | |
