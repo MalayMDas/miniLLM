@@ -166,6 +166,7 @@ Hand-built but standard components — each is a defensible choice:
 | `encoder.py` | **Toggle**: from-scratch ViT ↔ frozen pretrained SigLIP |
 | `projector.py` | MLP vision→LLM dim (LLaVA phase-1 trainable) |
 | `multimodal.py` | Splices projected patches into `<image>` positions |
+| `data.py` | Synthetic image→caption dataset + collate (trainable offline) |
 | **src/llmscratch/apps/** | |
 | `rag/` | Hashing embedder + cosine VectorStore + grounded RAG pipeline |
 | `agent/` | Model-agnostic ReAct loop driving the tool registry |
@@ -173,13 +174,17 @@ Hand-built but standard components — each is a defensible choice:
 | `metrics_logger.py` | Pluggable logger: TensorBoard / W&B / Noop + `build_logger` |
 | `config.py` | Config load + run provenance (`run_id` = gitSHA+cfgHash) |
 | `checkpoint.py` | Atomic save/load + `find_latest` for spot-safe resume |
+| `distributed.py` | torchrun-aware DDP setup + is_main gating (NCCL/gloo) |
 | **scripts/** | |
 | `demo.py` | **One-command local check** — runs every stage on CPU in seconds |
 | `train_tokenizer.py` | Train the byte-level BPE tokenizer from a config |
 | `smoke_train.py` | Minimal end-to-end train loop (cosine LR, logging, sampling) |
-| `pretrain.py` | Base pretraining (local or HF stream; auto-resume) |
-| `sft.py` | Instruct SFT from a base checkpoint |
+| `pretrain.py` | Base pretraining — single-GPU or DDP via `torchrun`; auto-resume |
+| `sft.py` | Instruct/tool SFT from a base checkpoint |
+| `train_vision.py` | Multimodal LLaVA training (phase 1 / phase 2) |
+| `evaluate.py` | Run perplexity + multiple-choice benchmarks on a checkpoint |
 | `quantize.py` | Quantize a checkpoint; report size + perplexity delta |
+| `check_ddp.py` | Verify the DDP path locally (2 ranks, CPU, FileStore) |
 | **tests/** (27 passing) | |
 | `test_tokenizer.py` | Round-trip + compression + special-token tests |
 | `test_model.py` | Forward shapes, GQA divisibility, generation, **causality** |
@@ -216,11 +221,19 @@ pytest                        # RUN 27 invariant tests
 # training stages (tiny, CPU-friendly):
 python scripts/pretrain.py --config configs/pretrain_tiny.yaml       # base + checkpoints
 python scripts/sft.py      --config configs/sft_tiny.yaml            # instruct
+python scripts/train_vision.py --phase 2                            # multimodal
+python scripts/evaluate.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt
 python scripts/quantize.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt
 tensorboard --logdir runs                                           # training curves
-python -m llmscratch.tokenizer.compare --bpe artifacts/tok.json     # tokenizer trade-off
 ```
 On Linux/macOS/git-bash, shortcuts: `make setup`, `make smoke`, `make tb`, `make test`.
+
+**Multi-GPU** (Linux + NVIDIA): the same script scales via `torchrun` —
+```bash
+torchrun --nproc_per_node=8 scripts/pretrain.py --config configs/pretrain_300m.yaml
+```
+(For models too big for one GPU, switch DDP→FSDP/DeepSpeed via `accelerate config`;
+the loop is unchanged. Verify the DDP path locally with `python scripts/check_ddp.py`.)
 
 ### Cloud — pick one path
 **A. Rented GPU box, no Docker (fastest start):** spin up a RunPod/Lambda/vast.ai pod
@@ -257,6 +270,8 @@ All knobs live in `configs/*.yaml` — no code edits needed.
 | **Sampling frequency** | `train.sample_every` | how often a generation is logged |
 | **Logging backend** | `logging.backend` | `tensorboard` ↔ `wandb` ↔ `none` (+ `project`, `run_name`) |
 | **CPU vs GPU** | `train.device` | `auto` / `cuda` / `cpu` |
+| **Number of GPUs** | launch cmd | `torchrun --nproc_per_node=N` (effective batch ×= N) |
+| **Grad accumulation** | `train.grad_accum` | effective batch = batch_size × grad_accum × N_gpus |
 | **Cloud GPU count/type** | `infra/sky/train.yaml` | `resources.accelerators`, `use_spot` |
 | **Docker CUDA version** | `Dockerfile` | base image tag (must be ≤ host driver's CUDA) |
 

@@ -67,8 +67,17 @@ Then exercise the **training** stages (still CPU-friendly at tiny scale):
 ```bash
 python scripts/pretrain.py --config configs/pretrain_tiny.yaml          # base model + checkpoints
 python scripts/sft.py      --config configs/sft_tiny.yaml               # instruct (loads the base ckpt)
+python scripts/sft.py      --config configs/sft_tools_tiny.yaml         # tool-use SFT
+python scripts/train_vision.py --phase 2                               # multimodal (synthetic data)
+python scripts/evaluate.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt  # benchmarks
 python scripts/quantize.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt  # size/quality report
 tensorboard --logdir runs                                              # watch training curves
+```
+
+**Multi-GPU** (Linux + NVIDIA) — same script, scaled by `torchrun`:
+```bash
+torchrun --nproc_per_node=8 scripts/pretrain.py --config configs/pretrain_300m.yaml
+python scripts/check_ddp.py     # verify the distributed path locally (2 CPU ranks)
 ```
 
 > The toy model is tiny and (in the demo) untrained, so generated *text* is
