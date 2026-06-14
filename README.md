@@ -48,6 +48,33 @@ pytest -q
 To use raw UTF-8 bytes instead of BPE, set `tokenizer.mode: byte` in the config
 (then skip step 1). You'll see sequences get ~4x longer — that's the lesson.
 
+## Verify it works locally (no GPU, no downloads)
+
+Two complementary checks — this is the fastest way to confirm a fresh clone is healthy:
+
+```bash
+# A. SEE every stage run end-to-end in a few seconds (prints what each did)
+python scripts/demo.py
+#    tokenizer -> eval -> tool use -> RAG -> agent -> vision -> quantization
+
+# B. RUN the test suite (checks invariants: causality, loss-masking,
+#    tool round-trips, multimodal fusion, scoring, RAG relevance)
+pytest                       # 27 tests; pass after `pip install -e .`
+```
+
+Then exercise the **training** stages (still CPU-friendly at tiny scale):
+
+```bash
+python scripts/pretrain.py --config configs/pretrain_tiny.yaml          # base model + checkpoints
+python scripts/sft.py      --config configs/sft_tiny.yaml               # instruct (loads the base ckpt)
+python scripts/quantize.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt  # size/quality report
+tensorboard --logdir runs                                              # watch training curves
+```
+
+> The toy model is tiny and (in the demo) untrained, so generated *text* is
+> gibberish — by design. What's being verified is that every **mechanism** runs
+> correctly; scaling up the config + data is what produces quality.
+
 ## Why byte-level BPE by default?
 Raw UTF-8 (256-vocab) needs no training but makes sequences ~4x longer for English,
 which ~4x's pretraining cost and shrinks effective context. Byte-level BPE keeps
@@ -57,11 +84,12 @@ The `byte` mode is kept so you can measure the difference yourself.
 ## Layout
 ```
 configs/   per-stage YAML (swap model size / datasets here)
-src/llmscratch/{tokenizer,model,data,...}
-scripts/   one-command entrypoints
-tests/     shape / masking / round-trip tests
-infra/gcp/ (later) Terraform for cloud training & serving
+src/llmscratch/{tokenizer,model,data,train,align,tools,eval,serve,quantize,vision,apps,utils}
+scripts/   one-command entrypoints (demo, train_tokenizer, smoke_train, pretrain, sft, quantize)
+tests/     invariant tests (shapes, masking, causality, tools, eval, RAG, vision)
+infra/     Dockerfile + cloud_setup.sh + SkyPilot (see infra/README.md)
 ```
+Full file-by-file map and design rationale: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Compute plan
 Local smoke-train proves the loop for free. Real pretraining targets a cheap

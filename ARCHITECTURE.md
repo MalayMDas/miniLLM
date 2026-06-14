@@ -174,6 +174,7 @@ Hand-built but standard components — each is a defensible choice:
 | `config.py` | Config load + run provenance (`run_id` = gitSHA+cfgHash) |
 | `checkpoint.py` | Atomic save/load + `find_latest` for spot-safe resume |
 | **scripts/** | |
+| `demo.py` | **One-command local check** — runs every stage on CPU in seconds |
 | `train_tokenizer.py` | Train the byte-level BPE tokenizer from a config |
 | `smoke_train.py` | Minimal end-to-end train loop (cosine LR, logging, sampling) |
 | `pretrain.py` | Base pretraining (local or HF stream; auto-resume) |
@@ -207,11 +208,17 @@ Hand-built but standard components — each is a defensible choice:
 ```bash
 pip install -r requirements.txt
 pip install -e .
-python scripts/train_tokenizer.py --config configs/model_tiny.yaml   # build BPE
-python scripts/smoke_train.py     --config configs/model_tiny.yaml   # train + log
-tensorboard --logdir runs                                            # http://localhost:6006
-python -m llmscratch.tokenizer.compare --bpe artifacts/tok.json      # see tokenizer trade-off
-pytest -q                                                            # tests
+
+# verify the whole pipeline (no GPU / no downloads):
+python scripts/demo.py        # SEE every stage run in seconds
+pytest                        # RUN 27 invariant tests
+
+# training stages (tiny, CPU-friendly):
+python scripts/pretrain.py --config configs/pretrain_tiny.yaml       # base + checkpoints
+python scripts/sft.py      --config configs/sft_tiny.yaml            # instruct
+python scripts/quantize.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt
+tensorboard --logdir runs                                           # training curves
+python -m llmscratch.tokenizer.compare --bpe artifacts/tok.json     # tokenizer trade-off
 ```
 On Linux/macOS/git-bash, shortcuts: `make setup`, `make smoke`, `make tb`, `make test`.
 
