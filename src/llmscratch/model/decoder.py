@@ -154,10 +154,17 @@ class Decoder(nn.Module):
         # subtract tied head to avoid double counting
         return sum(p.numel() for p in self.parameters()) - self.lm_head.weight.numel()
 
-    def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None):
-        B, T = idx.shape
+    def forward(self, idx: torch.Tensor | None = None,
+                targets: torch.Tensor | None = None,
+                inputs_embeds: torch.Tensor | None = None):
+        # Either token ids (idx) or precomputed embeddings (inputs_embeds, used by
+        # the multimodal path to splice in vision features).
+        if inputs_embeds is None:
+            x = self.tok_emb(idx)
+        else:
+            x = inputs_embeds
+        B, T = x.shape[0], x.shape[1]
         assert T <= self.cfg.max_seq_len, "sequence longer than max_seq_len"
-        x = self.tok_emb(idx)
         cos = self.rope_cos[:T].to(x.dtype)
         sin = self.rope_sin[:T].to(x.dtype)
         for block in self.blocks:
