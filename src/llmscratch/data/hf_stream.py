@@ -23,7 +23,8 @@ class PackedHFStream(IterableDataset):
     def __init__(self, tokenizer, dataset_name: str, block_size: int,
                  split: str = "train", name: Optional[str] = None,
                  text_field: str = "text", seed: int = 0,
-                 buffer_docs: int = 1000, rank: int = 0, world_size: int = 1):
+                 buffer_docs: int = 1000, rank: int = 0, world_size: int = 1,
+                 skip_blocks: int = 0):
         self.tok = tokenizer
         self.dataset_name = dataset_name
         self.name = name
@@ -34,6 +35,11 @@ class PackedHFStream(IterableDataset):
         self.buffer_docs = buffer_docs
         self.rank = rank
         self.world_size = world_size
+        # data-position checkpointing: on resume, skip the blocks already consumed so
+        # training continues THROUGH the corpus instead of restarting at the top. The
+        # stream is deterministic (fixed shuffle seed + fixed sharding), so skipping
+        # the first `skip_blocks` lands exactly where the previous run stopped.
+        self.skip_blocks = skip_blocks
 
     def _doc_iter(self) -> Iterator[str]:
         from datasets import load_dataset
@@ -54,12 +60,16 @@ class PackedHFStream(IterableDataset):
     def __iter__(self):
         buf: List[int] = []
         bs = self.block_size
+        produced = 0
         for text in self._doc_iter():
             buf.append(self.tok.bos_id)
             buf.extend(self.tok.encode(text, add_eos=True))
             while len(buf) >= bs + 1:
                 chunk = buf[: bs + 1]
                 buf = buf[bs:]                      # keep 1-token overlap for the shift
+                produced += 1
+                if produced <= self.skip_blocks:    # fast-forward past consumed blocks
+                    continue
                 x = torch.tensor(chunk[:-1], dtype=torch.long)
                 y = torch.tensor(chunk[1:], dtype=torch.long)
                 yield x, y

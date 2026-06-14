@@ -25,7 +25,15 @@ from llmscratch.utils import (load_config, build_logger, run_id,
                               find_latest, load_checkpoint, setup_distributed, cleanup)
 
 
-def build_loader(cfg, tok, dist):
+def step_from_ckpt(path) -> int:
+    """Parse the step from a 'step_0000300.pt' checkpoint filename (cheap, no load)."""
+    try:
+        return int(Path(path).stem.split("_")[1])
+    except Exception:
+        return 0
+
+
+def build_loader(cfg, tok, dist, skip_blocks: int = 0):
     d = cfg["data"]
     bs = cfg["train"]["batch_size"]
     if d["source"] == "local":
@@ -39,7 +47,8 @@ def build_loader(cfg, tok, dist):
         from llmscratch.data.hf_stream import packed_hf_stream
         ds = packed_hf_stream(tok, d["hf_dataset"], d["block_size"],
                               name=d.get("hf_name"), text_field=d.get("text_field", "text"),
-                              rank=dist.rank, world_size=dist.world_size)
+                              rank=dist.rank, world_size=dist.world_size,
+                              skip_blocks=skip_blocks)   # resume continues through corpus
         return DataLoader(ds, batch_size=bs)   # IterableDataset: shards itself by rank/worker
     raise ValueError(f"unknown data.source: {d['source']}")
 
@@ -73,8 +82,15 @@ def main():
         ddp_ids = [dist.local_rank] if device.startswith("cuda") else None
         model = DDP(model, device_ids=ddp_ids)
 
-    loader = build_loader(cfg, tok, dist)
     t = cfg["train"]
+    # Resume: find the latest checkpoint and compute how many data blocks were already
+    # consumed, so the stream skips them (continue THROUGH the corpus, not restart).
+    latest = find_latest(t["ckpt_dir"])
+    resume_step = step_from_ckpt(latest) if latest is not None else 0
+    blocks_per_step = t["batch_size"] * t["grad_accum"]      # num_workers=0 => exact
+    skip_blocks = resume_step * blocks_per_step
+
+    loader = build_loader(cfg, tok, dist, skip_blocks=skip_blocks)
     targs = TrainArgs(
         steps=t["steps"], lr=t["lr"], warmup_steps=t["warmup_steps"],
         weight_decay=t["weight_decay"], grad_accum=t["grad_accum"],
@@ -90,11 +106,11 @@ def main():
                       tokens_per_step=t["batch_size"] * cfg["data"]["block_size"] * dist.world_size)
 
     start = 0
-    latest = find_latest(t["ckpt_dir"])
     if latest is not None:
         start = load_checkpoint(latest, trainer.raw_model, trainer.opt, map_location=device)
         if dist.is_main:
-            print(f"resumed from {latest} at step {start}")
+            print(f"resumed from {latest} at step {start} "
+                  f"(skipping {skip_blocks} data blocks to continue through corpus)")
 
     # extend a (possibly finished) model: train N more steps with a fresh schedule
     if args.add_steps is not None:
