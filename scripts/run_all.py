@@ -39,7 +39,14 @@ PY = sys.executable
 def run(title: str, cmd: list) -> None:
     print("\n" + "=" * 70 + f"\n  {title}\n  $ {' '.join(str(c) for c in cmd)}\n" + "=" * 70)
     t0 = time.perf_counter()
-    subprocess.run(cmd, cwd=ROOT, check=True)
+    result = subprocess.run(cmd, cwd=ROOT)
+    if result.returncode != 0:
+        # The stage already printed its own error (e.g. VRAM preflight). Don't bury it
+        # under a Python traceback — exit cleanly so the actionable message is the last
+        # thing the user sees.
+        print(f"\n[run_all] stage '{title}' failed (exit {result.returncode}); stopping. "
+              f"See the message above.")
+        sys.exit(result.returncode)
     print(f"  [{title}] done in {(time.perf_counter()-t0)/60:.1f} min")
 
 
@@ -104,6 +111,8 @@ def main() -> None:
     ap.add_argument("--pretrain-minutes", type=float, default=100.0)
     ap.add_argument("--add-steps", type=int, default=None,
                     help="resume the existing model and train this many MORE steps")
+    ap.add_argument("--allow-oversize", action="store_true",
+                    help="skip the pretrain VRAM preflight (will spill to slow shared RAM)")
     ap.add_argument("--prep-tokens", type=int, default=None,
                     help="tokens to pre-download (overrides the profile default)")
     ap.add_argument("--instruct-data", default=None,
@@ -178,6 +187,8 @@ def main() -> None:
         pre_cmd += ["--add-steps", str(args.add_steps)]
     elif p["time_boxed"]:
         pre_cmd += ["--minutes", str(args.pretrain_minutes)]
+    if args.allow_oversize:
+        pre_cmd += ["--allow-oversize"]
     run("2 pretrain", pre_cmd)
 
     ckpt = find_latest(ROOT / p["ckpt_dir"])
