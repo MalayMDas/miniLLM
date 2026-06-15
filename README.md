@@ -89,7 +89,10 @@ One orchestrator runs every stage sequentially on a ~25M model + real FineWeb-Ed
 ```bash
 python scripts/run_all.py --smoke           # FIRST: verify wiring offline (~1 min)
 python scripts/run_all.py --pretrain-minutes 100   # the real ~2h run (needs internet)
+python scripts/run_all.py --minipile-local  # ~41M model on MiniPile data, fits 6 GB
 ```
+(`--minipile-local` reuses `data/minipile.bin`; `--minipile` is the ~1B cloud variant
+that needs a 40–80 GB GPU.)
 It does **tokenizer → pretrain → eval → instruct SFT → reasoning (CoT) → quantize →
 sample**. The reasoning pass trains on `<think>…</think>` data, so the final model
 emits reasoning tags before its answer. By default it uses a tiny placeholder

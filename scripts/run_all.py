@@ -2,6 +2,7 @@
 
     python scripts/run_all.py                 # local ~2h run (FineWeb-Edu stream, 6 GB GPU)
     python scripts/run_all.py --offline       # local, download a .bin once then no network
+    python scripts/run_all.py --minipile-local # ~41M model on MiniPile, fits a 6 GB GPU
     python scripts/run_all.py --minipile      # ~1B model on MiniPile (~1.5B tok) — needs A100
     python scripts/run_all.py --smoke         # tiny + offline, ~1 min (verifies wiring)
 
@@ -51,19 +52,21 @@ def profile(args) -> dict:
                     sft_cfg="configs/sft_tiny.yaml", tok_path="artifacts/tok.json",
                     ckpt_dir="artifacts/ckpt_pretrain", sft_ckpt_dir="artifacts/ckpt_sft",
                     reason_ckpt_dir="artifacts/ckpt_reason", prep=None, time_boxed=False)
-    if args.minipile:
-        return dict(name="minipile",
+    if args.minipile or args.minipile_local:
+        local = args.minipile_local
+        sfx = "_local" if local else ""
+        return dict(name="minipile-local" if local else "minipile",
                     tok_cfg="configs/tokenizer_minipile.yaml",
-                    pre_cfg="configs/pretrain_minipile.yaml",
-                    sft_cfg="configs/sft_minipile.yaml",
+                    pre_cfg=f"configs/pretrain_minipile{'_local' if local else ''}.yaml",
+                    sft_cfg=f"configs/sft_minipile{'_local' if local else ''}.yaml",
                     tok_path="artifacts/tok_minipile.json",
-                    ckpt_dir="artifacts/ckpt_pretrain_minipile",
-                    sft_ckpt_dir="artifacts/ckpt_sft_minipile",
-                    reason_ckpt_dir="artifacts/ckpt_reason_minipile",
+                    ckpt_dir=f"artifacts/ckpt_pretrain_minipile{sfx}",
+                    sft_ckpt_dir=f"artifacts/ckpt_sft_minipile{sfx}",
+                    reason_ckpt_dir=f"artifacts/ckpt_reason_minipile{sfx}",
                     prep=dict(dataset="JeanKaddour/minipile", name="none",
                               out="data/minipile.bin",
                               tokens=args.prep_tokens or 1_500_000_000),
-                    time_boxed=False)
+                    time_boxed=local)   # local run is time-boxed; cloud runs the step count
     # local desktop run
     return dict(name="local-offline" if args.offline else "local-streaming",
                 tok_cfg="configs/tokenizer_local.yaml",
@@ -86,6 +89,8 @@ def main() -> None:
                     help="local run from a pre-downloaded .bin (no network during training)")
     ap.add_argument("--minipile", action="store_true",
                     help="~1B model on MiniPile (~1.5B tokens); needs a 40-80 GB GPU")
+    ap.add_argument("--minipile-local", action="store_true",
+                    help="~41M model on MiniPile; fits a 6 GB GPU, reuses data/minipile.bin")
     ap.add_argument("--pretrain-minutes", type=float, default=100.0)
     ap.add_argument("--add-steps", type=int, default=None,
                     help="resume the existing model and train this many MORE steps")

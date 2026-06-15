@@ -1,0 +1,42 @@
+# Instruct SFT for the LOCAL ~41M MiniPile model. Dims MUST match
+# pretrain_minipile_local.yaml and the tokenizer must be tok_minipile.json.
+# init_from / ckpt-dir are injected by run_all.py.
+model:
+  dim: 512
+  n_layers: 8
+  n_heads: 8
+  n_kv_heads: 4
+  max_seq_len: 512
+  dropout: 0.0
+
+tokenizer:
+  mode: bpe
+  path: artifacts/tok_minipile.json
+  vocab_size: 32000
+
+init_from: null
+
+data:
+  chat_jsonl: data/sample_chat.jsonl
+  max_len: 512
+
+train:
+  steps: 400
+  time_budget_min: 10
+  lr: 0.0002
+  warmup_steps: 20
+  weight_decay: 0.0
+  grad_accum: 1
+  batch_size: 4
+  device: auto
+  amp: true
+  compile: false
+  log_every: 20
+  ckpt_every: 0
+  ckpt_dir: artifacts/ckpt_sft_minipile_local
+  seed: 1337
+
+logging:
+  backend: tensorboard
+  logdir: runs
+  run_name: sft_minipile_local
