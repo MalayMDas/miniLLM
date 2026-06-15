@@ -6,6 +6,8 @@ and *use* a small multimodal LLM. See [PLAN.md](PLAN.md) for the full roadmap,
 [RUNBOOK.md](RUNBOOK.md) for the step-by-step **cloud training run** (provision →
 tokenizer → pretrain → SFT → reasoning → eval → quantize/serve, with cost controls),
 and [CHEATSHEET.md](CHEATSHEET.md) for a one-page interview-prep summary.
+Before sharing a model, see [READINESS.md](READINESS.md) (safety, tool sandboxing,
+licensing) and generate a card with `scripts/model_card.py`.
 
 ## Status
 **All stages built and locally runnable** (tiny configs; scale via YAML):

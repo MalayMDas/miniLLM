@@ -253,6 +253,7 @@ run (random windows, no network, trivial resume).
 | `benchmarks.py` | Perplexity + length-normalized multiple-choice accuracy |
 | `tasks/` | Real benchmark loaders+scorers: HellaSwag, OpenBookQA, GSM8K, BFCL, VQAv2 |
 | `lm_eval_adapter.py` | EleutherAI lm-eval-harness adapter (`score_pair` + `LMScratchLM`) |
+| `safety.py` | Refusal detection + refusal-rate / over-refusal safety report |
 | **src/llmscratch/serve/** | |
 | `generate.py` | Sampling (top-k/top-p, stop tokens) + `generate_chat` |
 | `api.py` | OpenAI-compatible FastAPI (`/v1/chat/completions`); vLLM-contract |
@@ -287,6 +288,7 @@ run (random windows, no network, trivial resume).
 | `quantize.py` | Quantize a checkpoint; report size + perplexity delta |
 | `export_hf.py` | Export a checkpoint to a HF Llama folder (TRL / vLLM / lm-eval) |
 | `export_gguf.py` | Export to GGUF via llama.cpp (CPU / low-VRAM, "runs anywhere") |
+| `model_card.py` | Generate MODEL_CARD.md (arch, data, eval, limitations, license) |
 | `chat.py` | **Prompt your own model** — interactive REPL or `--prompt`; chat/complete modes |
 | `status.py` | Check live loss/throughput from `metrics.jsonl` (no browser); `--watch` |
 | `check_ddp.py` | Verify the DDP path locally (2 ranks, CPU, FileStore) |

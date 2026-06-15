@@ -10,9 +10,12 @@ within ~a day**.
 > **GGUF export** (llama.cpp), and **dataset mixing** (web text + code). Deliberate
 > deviations from the original plan: **GCP Terraform → Docker + SkyPilot** (cheaper
 > providers), **TRL → our own transparent Trainer/SFT/GRPO** (for learning).
+> **Stage 12 (end-user readiness) now started:** safety/refusal eval (`eval/safety.py`),
+> refusal SFT data, model-card generator (`scripts/model_card.py`), and `READINESS.md`
+> (prompt-injection, tool sandboxing, licensing, deployment hardening).
 > Genuine remaining gaps (lower priority): FSDP/DeepSpeed (DDP only), DPO, contrastive
-> ViT pretraining, AWQ/GPTQ, decontamination, and Stage 12 end-user readiness
-> (model card, safety/refusal eval, tool sandboxing). See `ARCHITECTURE.md` for the map.
+> ViT pretraining, AWQ/GPTQ, decontamination, robust safety (moderation classifier).
+> See `ARCHITECTURE.md` for the map.
 
 ---
 
