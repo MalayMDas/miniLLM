@@ -23,6 +23,19 @@ def test_cot_conversation_roles():
     assert [m["role"] for m in msgs] == ["system", "user", "assistant"]
 
 
+def test_gsm8k_to_cot_transform():
+    # prepare_reason.py maps real GSM8K {question, answer-with-####} to <think> chat
+    import importlib.util
+    p = Path(__file__).resolve().parents[1] / "scripts" / "prepare_reason.py"
+    spec = importlib.util.spec_from_file_location("prepare_reason", p)
+    pr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pr)
+    m = pr.to_cot_message("Q?", "step one\nstep two\n#### 1,200")
+    content = m["messages"][1]["content"]
+    assert content.startswith("<think>step one") and "</think>" in content
+    assert "The answer is 1200." in content        # commas stripped from the final answer
+
+
 def test_grpo_step_runs():
     tok = ByteTokenizer()
     torch.manual_seed(0)

@@ -92,7 +92,12 @@ python scripts/run_all.py --pretrain-minutes 100   # the real ~2h run (needs int
 ```
 It does **tokenizer → pretrain → eval → instruct SFT → reasoning (CoT) → quantize →
 sample**. The reasoning pass trains on `<think>…</think>` data, so the final model
-emits reasoning tags before its answer.
+emits reasoning tags before its answer. By default it uses a tiny placeholder
+(`data/sample_reason.jsonl`); for **real CoT** fetch GSM8K first:
+```bash
+python scripts/prepare_reason.py            # GSM8K -> data/reason.jsonl (auto-used next run)
+# or point anywhere:  python scripts/run_all.py ... --reason-data data/reason.jsonl
+```
 **Review progress live** in a second terminal: `tensorboard --logdir runs` →
 http://localhost:6006 (loss, perplexity, lr, grad-norm, tokens/sec, sample text).
 Config: `configs/pretrain_local.yaml` (sized for 6 GB; if you hit CUDA OOM, drop

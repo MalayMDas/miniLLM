@@ -91,6 +91,10 @@ def main() -> None:
                     help="resume the existing model and train this many MORE steps")
     ap.add_argument("--prep-tokens", type=int, default=None,
                     help="tokens to pre-download (overrides the profile default)")
+    ap.add_argument("--reason-data", default=None,
+                    help="CoT jsonl for the reasoning stage. Default: data/reason.jsonl if "
+                         "present (run scripts/prepare_reason.py to fetch real GSM8K CoT), "
+                         "else the tiny data/sample_reason.jsonl placeholder.")
     args = ap.parse_args()
 
     p = profile(args)
@@ -153,12 +157,17 @@ def main() -> None:
     run("4 instruct-sft", [PY, "scripts/sft.py", "--config", p["sft_cfg"], "--init-from", ckpt])
     instruct_ckpt = find_latest(ROOT / p["sft_ckpt_dir"])
 
-    # 5. reasoning: CoT distillation on <think>...</think> data, from the instruct model
+    # 5. reasoning: CoT distillation on <think>...</think> data, from the instruct model.
+    # Prefer real GSM8K CoT (data/reason.jsonl from prepare_reason.py); else placeholder.
+    reason_data = (args.reason_data
+                   or ("data/reason.jsonl" if (ROOT / "data/reason.jsonl").exists()
+                       else "data/sample_reason.jsonl"))
     final_ckpt = instruct_ckpt
     if instruct_ckpt is not None:
+        print(f"   reasoning CoT data: {reason_data}")
         run("5 reasoning (CoT)", [PY, "scripts/sft.py", "--config", p["sft_cfg"],
                                   "--init-from", str(instruct_ckpt),
-                                  "--chat-jsonl", "data/sample_reason.jsonl",
+                                  "--chat-jsonl", reason_data,
                                   "--ckpt-dir", p["reason_ckpt_dir"]])
         final_ckpt = find_latest(ROOT / p["reason_ckpt_dir"]) or instruct_ckpt
 
