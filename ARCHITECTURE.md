@@ -20,28 +20,29 @@ alternatives, and the trade-offs** — written so you can defend every decision.
    │  DATA   │  tokens   │  TOKENIZER   │   ids                         │  LOGGING   │
    │ text.py │──────────▶│ byte | BPE   │──────────┐                    │ TB | W&B   │
    └─────────┘           └──────────────┘          │                    └─────▲──────┘
-   (local .txt now;                                 ▼                          │ scalars/text
-    HF streaming later)                       ┌──────────┐  loss/logits        │
+   (local .txt / .bin /                             ▼                          │ scalars/text
+    HF-stream / mixing)                       ┌──────────┐  loss/logits        │
                                               │  MODEL   │─────────────────────┘
                                               │ decoder  │  (RoPE/RMSNorm/
                                               │  .py     │   SwiGLU/GQA)
                                               └────┬─────┘
                                                    │ AdamW + cosine LR
                                         ┌──────────▼───────────┐
-                                        │   TRAIN LOOP          │  scripts/smoke_train.py
-                                        │  (overfit smoke now;  │  → checkpoints + samples
-                                        │   FSDP/DeepSpeed next)│
+                                        │   TRAIN LOOP          │  Trainer (DDP, resume,
+                                        │  pretrain→SFT→reason  │  time-box, compile)
+                                        │  →eval→quant→export   │  → checkpoints + samples
                                         └──────────┬───────────┘
                                                    │
         ┌──────────────────────────┬──────────────┴───────────────┬─────────────────────┐
         ▼                          ▼                               ▼                     ▼
-   LOCAL (make)            RENTED GPU (cloud_setup.sh)      DOCKER (repro/serve)    SkyPilot (spot)
+   LOCAL (run_all)        RENTED GPU (cloud_setup.sh)      DOCKER (repro/serve)    SkyPilot (spot)
 ```
 
 **Stage roadmap** (see `PLAN.md`): data → tokenizer → base pretrain → vision (toggle)
-→ instruct (SFT) → reasoning (CoT/GRPO) → tools → eval → serve → quantize → apps.
-**All stages are implemented and locally runnable at tiny scale (27 tests passing);**
-remaining work is scaling up (real data volume + multi-GPU), not new components.
+→ instruct (SFT) → reasoning (CoT/GRPO) → tools → eval → serve → quantize → **HF/GGUF
+export** → apps. **All stages implemented and runnable (47 tests).** `scripts/run_all.py`
+chains them (see §3B); checkpoints export to a real HF Llama / GGUF (see §3C). Remaining
+gaps are lower-priority (FSDP/DeepSpeed, DPO, contrastive ViT, AWQ/GPTQ, robust safety).
 
 ---
 
@@ -121,7 +122,9 @@ Hand-built but standard components — each is a defensible choice:
 - **GQA** (fewer KV heads than Q heads) vs MHA → shrinks the KV cache ⇒ faster/cheaper inference; tiny quality hit. MQA (1 KV head) is the extreme.
 - **Weight tying** (embedding = LM head) → saves `vocab×dim` params, regularizes.
 - **SDPA** for attention → fused kernel, FlashAttention when available, causal masking for free.
-- **Pros:** modern, efficient, transfers to real model sizes by only editing the config. **Cons:** hand-written ≠ HF-compatible yet, so TRL/vLLM/eval need a wrapper (planned next).
+- **Pros:** modern, efficient, transfers to real model sizes by only editing the config. The
+  arch uses HF's `rotate_half` RoPE, so it **exports losslessly to `transformers.LlamaForCausalLM`**
+  (§3C) → TRL/vLLM/lm-eval/GGUF for free. **Cons:** hand-written core to maintain.
 - **Best practice:** keep it size-agnostic via `ModelConfig`; prove correctness with a smoke-train (loss must drop, sample must memorize) before scaling.
 
 ### 3.3 Framework-first (not pure from-scratch)
@@ -188,6 +191,12 @@ a training signal**. Two mechanics recur and are worth fixing in your head first
 | **Multimodal** | LAION/COCO/LLaVA mixture (our synthetic color set offline) | `{image: tensor[3,H,W], text}`; prompt holds `<image>` placeholder tokens | image → encoder(ViT/SigLIP) → projector → embeddings **spliced into the `<image>` positions**; next-token loss on the caption/answer (assistant-masked). Phase 1 trains projector only; phase 2 + LLM |
 | **Evaluation** | HellaSwag, OpenBookQA, GSM8K, BFCL, VQAv2 | see below | **no training** — measurement only |
 
+**Real-data prep (one-time downloads):** `prepare_instruct.py` (UltraChat → `data/instruct.jsonl`,
+auto-detects messages/ShareGPT schemas), `prepare_tools.py` (xLAM → `<tool_call>` jsonl),
+`prepare_reason.py` (GSM8K CoT → `data/reason.jsonl`). `run_all` uses these if present,
+else tiny offline placeholders. **Mixing:** `prepare_data.py --datasets` weight-interleaves
+corpora (e.g. `--minipile-local` pretrains on 90% MiniPile + 10% `the-stack-smol` code).
+
 **Streaming vs. offline (pretrain):** by default the corpus is **streamed**
 (`source: hf`, `streaming=True`) — TB-scale data is fetched shard-by-shard *during*
 training, not downloaded upfront (hence occasional CDN retry warnings). `prepare_data.py`
@@ -216,6 +225,66 @@ run (random windows, no network, trivial resume).
 
 ---
 
+## 3B. The `run_all` orchestrator & profiles
+
+`scripts/run_all.py` runs the whole lifecycle **sequentially as subprocesses** (so each
+stage's output streams live and the pyarrow-before-torch import order is clean per
+process). It is **resumable** (re-run = continue: pretrain auto-loads model + optimizer
++ data position) and **idempotent** for prep (skips downloads/tokenizers that already
+exist).
+
+**Stage order:**
+```
+tokenizer → [1b prep pretrain .bin] → [1c prep REAL post-train data]
+   → pretrain (resumable, time-boxed or step-count)
+   → base eval (stage 3)
+   → instruct SFT  (MERGED: instruct + tool-use + safety, one pass → no forgetting)
+   → reasoning (CoT distillation on <think> data)
+   → final eval (perplexity+MCQ; + real benchmarks for real-data profiles)
+   → quantize → sample (emits <think>…</think>)
+```
+
+**Profiles** (`--flag`), each a self-contained config/ckpt set so they never collide:
+
+| Profile | Model | Pretrain data | Post-train data | GPU | Network |
+|---|---|---|---|---|---|
+| `--smoke` | ~1M | local `sample.txt` | placeholders | CPU | none (wiring check, ~1 min) |
+| *(default)* | ~25M | FineWeb-Edu **stream** | placeholders | 6 GB | yes (streams) |
+| `--offline` | ~25M | FineWeb-Edu local `.bin` | placeholders | 6 GB | once (prep) |
+| `--minipile-local` | ~41M | **MiniPile + code** `.bin` | **real** (UltraChat/xLAM/GSM8K) | 6 GB | once (prep) |
+| `--minipile` | ~1B | MiniPile `.bin` | real | 40–80 GB | once (prep) |
+
+**Key design points**
+- **Merged SFT mix:** instruct + tool-use + safety train in *one* SFT pass (not chained
+  passes), avoiding catastrophic forgetting; each component auto-uses real prepared data
+  (`prepare_instruct/tools/reason`) if present, else a tiny offline placeholder.
+- **Real vs placeholder:** the `prepare_*` scripts fetch real data once → `data/*.jsonl`;
+  `run_all` detects and uses them. Keeps `--smoke`/`--offline` fully offline.
+- **Final vs base eval:** the model is eval'd after pretraining *and* after all
+  post-training, so you can read what each stage bought.
+- **Time-box vs steps:** desktop profiles stop on `--pretrain-minutes`; cloud profiles
+  run the config's `steps`. `--add-steps N` extends a finished model with a fresh schedule.
+
+## 3C. Export & deployment
+
+The transparent path (our `serve/`, `quantize/`) is for understanding; the **export
+path** turns a checkpoint into standard artifacts for real serving:
+
+- **HF Llama export** (`model/hf_export.py`): maps our Decoder onto a genuine
+  `transformers.LlamaForCausalLM`. Our arch already uses HF's **`rotate_half` RoPE**
+  convention, so q/k weights transfer with **no permutation** — verified **numerically
+  identical** (max logit diff ~5e-7). This unlocks TRL, **vLLM**, and native lm-eval.
+- **GGUF** (`scripts/export_gguf.py`): HF folder → llama.cpp `convert_hf_to_gguf.py` →
+  `llama-quantize` (e.g. Q4_K_M). The "runs anywhere" path: CPU / Apple Silicon /
+  low-VRAM (Ollama, LM Studio).
+- **Serving:** `serve/api.py` is an OpenAI-compatible FastAPI over our model (transparent);
+  for throughput, export to HF and `vllm serve` (PagedAttention, same API contract).
+- **Quantization ladder:** int8 dynamic (built, CPU) → GGUF/llama.cpp (laptop) → AWQ/GPTQ
+  4-bit (GPU serving) → bitsandbytes (quick tests). Always report quality (perplexity)
+  next to the size/speed win.
+
+---
+
 ## 4. File-by-file map
 
 | Path | What it does |
@@ -223,8 +292,13 @@ run (random windows, no network, trivial resume).
 | `PLAN.md` | Full stage-by-stage roadmap + budget/scope reasoning |
 | `ARCHITECTURE.md` | **This file** — design decisions, stack, run guide |
 | `README.md` | Quickstart + the byte-vs-BPE rationale |
-| **configs/** | |
-| `configs/model_tiny.yaml` | Tiny knob-set for local smoke-train (model/tokenizer/data/train/logging) |
+| `RUNBOOK.md` | Step-by-step cloud training run (provision → … → serve, cost controls) |
+| `CHEATSHEET.md` | One-page interview-prep summary |
+| `READINESS.md` | End-user readiness: safety, prompt-injection, tool sandboxing, licensing |
+| `MODEL_CARD.md` | Generated by `scripts/model_card.py` (arch, data, eval, limits, license) |
+| **configs/** (one per stage/profile) | |
+| `model_tiny.yaml` · `pretrain_{tiny,local,local_offline,300m,minipile,minipile_local}.yaml` | model + pretrain knob-sets (size, data source, schedule) |
+| `tokenizer_{32k,local,minipile}.yaml` · `sft_{tiny,local,tools_tiny,minipile,minipile_local}.yaml` | tokenizer training + SFT knob-sets |
 | **src/llmscratch/tokenizer/** | |
 | `byte_tokenizer.py` | Raw UTF-8 byte tokenizer (vocab 256 + shared special tokens) |
 | `bpe.py` | Byte-level BPE: train / save / load / encode / decode (HF `tokenizers`) |
@@ -295,11 +369,14 @@ run (random windows, no network, trivial resume).
 | `chat.py` | **Prompt your own model** — interactive REPL or `--prompt`; chat/complete modes |
 | `status.py` | Check live loss/throughput from `metrics.jsonl` (no browser); `--watch` |
 | `check_ddp.py` | Verify the DDP path locally (2 ranks, CPU, FileStore) |
-| **tests/** (27 passing) | |
+| **tests/** (47 passing) | |
 | `test_tokenizer.py` | Round-trip + compression + special-token tests |
 | `test_model.py` | Forward shapes, GQA divisibility, generation, **causality** |
 | `test_tools.py` `test_eval.py` | Tool calculator/parser; perplexity/MCQ scoring |
 | `test_apps.py` `test_vision.py` `test_reasoning.py` | RAG/agent; multimodal; CoT/GRPO |
+| `test_hf_export.py` | **Decoder == exported Llama** logits (numerically exact) |
+| `test_data_resume.py` | data-position skip + `weighted_interleave` mixing + bin windows |
+| `test_benchmark_tasks.py` `test_safety.py` `test_logger.py` | GSM8K/BFCL/VQA scoring; refusal eval; logger fallback |
 | **infra/** | |
 | `infra/cloud_setup.sh` | No-Docker fast path: pinned install + GPU sanity + smoke-train |
 | `infra/sky/train.yaml` | SkyPilot launcher (cheapest spot GPU, managed auto-resume) |
@@ -314,6 +391,7 @@ run (random windows, no network, trivial resume).
 | `.gitignore` | Excludes runs/artifacts/checkpoints/secrets |
 | `.gitattributes` | Forces LF endings (Windows→Linux safety) |
 | `data/sample.txt` | Tiny corpus for offline smoke-train |
+| `data/sample_{chat,tools_chat,safety,reason,mcq,bfcl}.jsonl` | Tiny offline placeholders (instruct/tools/safety/CoT) + eval fixtures |
 
 ---
 
@@ -326,14 +404,18 @@ pip install -e .
 
 # verify the whole pipeline (no GPU / no downloads):
 python scripts/demo.py        # SEE every stage run in seconds
-pytest                        # RUN 27 invariant tests
+pytest                        # RUN 47 invariant tests
 
-# training stages (tiny, CPU-friendly):
+# run the WHOLE pipeline via the orchestrator (see §3B for profiles):
+python scripts/run_all.py --smoke           # tiny, offline, ~1 min (wiring check)
+python scripts/run_all.py --minipile-local  # ~41M, real data (MiniPile+code, UltraChat/xLAM/GSM8K), final eval
+
+# or individual stages (tiny, CPU-friendly):
 python scripts/pretrain.py --config configs/pretrain_tiny.yaml       # base + checkpoints
 python scripts/sft.py      --config configs/sft_tiny.yaml            # instruct
 python scripts/train_vision.py --phase 2                            # multimodal
-python scripts/evaluate.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt
-python scripts/quantize.py --ckpt artifacts/ckpt_pretrain/step_0000200.pt
+python scripts/chat.py --ckpt <ckpt> --tokenizer <tok.json>         # prompt your model
+python scripts/export_hf.py --ckpt <ckpt> --out artifacts/hf_model  # → HF Llama (vLLM/TRL/GGUF)
 tensorboard --logdir runs                                           # training curves
 ```
 On Linux/macOS/git-bash, shortcuts: `make setup`, `make smoke`, `make tb`, `make test`.
@@ -414,3 +496,6 @@ streaming loader (next stage), set `logging.backend: wandb`, launch via SkyPilot
 - *How do you survive spot preemption?* → checkpoint every N steps to object storage + `sky jobs launch` auto-recovery.
 - *Why not a vision encoder fully from scratch for quality?* → compute-prohibitive; toggle to SigLIP and only train the projector.
 - *How do you validate the model isn't just memorizing position?* → causality test + held-out eval via lm-eval-harness with decontamination.
+- *You hand-wrote the model — how do you use vLLM/TRL/GGUF then?* → export to a real `transformers.LlamaForCausalLM`; our RoPE matches HF `rotate_half`, so weights map with no permutation — verified logit-identical (~5e-7). From there vLLM/TRL/lm-eval/llama.cpp all work.
+- *How do you add tool-use without forgetting chat?* → fold tool-call data into the instruct SFT as one *merged* mixture (instruct + tools + safety), not chained passes.
+- *Real or toy datasets?* → `prepare_{instruct,tools,reason}.py` fetch UltraChat / xLAM / GSM8K; `--minipile-local` runs the full real pipeline (web+code pretrain → real SFT → final benchmarks); placeholders keep offline runs working.
