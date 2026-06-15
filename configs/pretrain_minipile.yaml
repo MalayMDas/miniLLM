@@ -1,0 +1,54 @@
+# ~1B-param base model, trained on MiniPile (~1.5B tokens) — keeps the 1B size while
+# the small corpus fits a hard budget. HONEST: 1.5B tokens << Chinchilla's ~20B for
+# 1B params, so this model is intentionally UNDERTRAINED (weak benchmarks); the point
+# is to run a real 1B end-to-end cheaply.
+#
+# Hardware: needs a 40-80 GB GPU (A100/H100) — NOT a 6 GB local card. Cost on 1xA100-80GB
+# spot is ~$25-35 for ~1 epoch (~12k steps). Validate the pipeline first with a tiny
+# model (edit dims) or `run_all.py --smoke` before booking the GPU.
+#
+# Prepare once (downloads + tokenizes MiniPile to a local .bin, then trains offline):
+#   python scripts/train_tokenizer.py --config configs/tokenizer_minipile.yaml
+#   python scripts/prepare_data.py --tokenizer artifacts/tok_minipile.json \
+#       --dataset JeanKaddour/minipile --name none --tokens 1500000000 --out data/minipile.bin
+#   python scripts/pretrain.py --config configs/pretrain_minipile.yaml
+#   # multi-GPU: torchrun --nproc_per_node=N scripts/pretrain.py --config configs/pretrain_minipile.yaml
+model:
+  dim: 2048
+  n_layers: 20
+  n_heads: 16
+  n_kv_heads: 8
+  max_seq_len: 2048
+  dropout: 0.0
+
+tokenizer:
+  mode: bpe
+  path: artifacts/tok_minipile.json
+  vocab_size: 32000
+
+data:
+  source: bin                       # offline: no network during training
+  bin_path: data/minipile.bin
+  block_size: 2048
+  num_workers: 2                    # Linux: background prefetch
+
+train:
+  steps: 12000                      # ~1 epoch of 1.5B tokens at the effective batch below
+  lr: 0.0003
+  warmup_steps: 200
+  weight_decay: 0.1
+  grad_accum: 16                    # effective batch = 4 * 16 = 64 seqs (* num_gpus)
+  batch_size: 4                     # raise on 80 GB; lower / add grad_accum on OOM
+  device: auto
+  amp: true                         # bf16
+  compile: true                     # Linux GPU speedup; auto-skipped on Windows/CPU
+  compile_mode: default
+  log_every: 20
+  ckpt_every: 500                   # checkpoint to a persistent volume/bucket (spot-safe)
+  ckpt_dir: artifacts/ckpt_pretrain_minipile
+  seed: 1337
+
+logging:
+  backend: wandb
+  project: llm-from-scratch
+  run_name: pretrain-1b-minipile

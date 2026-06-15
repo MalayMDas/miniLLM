@@ -30,11 +30,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from llmscratch.tokenizer import build_tokenizer
 
 
+def _norm_name(name):
+    """Treat 'none'/'null'/'' as None so config-less datasets (MiniPile) load."""
+    if name is None or str(name).strip().lower() in ("", "none", "null"):
+        return None
+    return name
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tokenizer", default="artifacts/tok_local.json")
     ap.add_argument("--dataset", default="HuggingFaceFW/fineweb-edu")
-    ap.add_argument("--name", default="sample-10BT")
+    ap.add_argument("--name", default="sample-10BT",
+                    help="dataset config name; pass 'none' (or '') for datasets that "
+                         "have no config, e.g. MiniPile")
     ap.add_argument("--text-field", default="text")
     ap.add_argument("--tokens", type=int, default=100_000_000, help="target token count")
     ap.add_argument("--out", default="data/fineweb_local.bin")
@@ -44,8 +53,9 @@ def main():
     if tok.vocab_size > 65535:
         raise SystemExit(f"vocab_size {tok.vocab_size} > 65535 — use uint32 (edit dtype)")
 
+    name = _norm_name(args.name)            # 'none'/'' -> None (datasets without a config)
     from datasets import load_dataset
-    ds = load_dataset(args.dataset, name=args.name, split="train", streaming=True)
+    ds = load_dataset(args.dataset, name=name, split="train", streaming=True)
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

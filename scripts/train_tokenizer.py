@@ -32,6 +32,8 @@ from llmscratch.tokenizer import BPETokenizer
 
 def hf_text_iter(dataset: str, name: str, text_field: str, n_docs: int) -> Iterator[str]:
     from datasets import load_dataset
+    if name is not None and str(name).strip().lower() in ("", "none", "null"):
+        name = None                       # datasets without a config (e.g. MiniPile)
     ds = load_dataset(dataset, name=name, split="train", streaming=True)
     for i, ex in enumerate(ds):
         if i >= n_docs:

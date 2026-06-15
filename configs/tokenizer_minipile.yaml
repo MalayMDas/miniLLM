@@ -1,0 +1,13 @@
+# 32k byte-level BPE trained on MiniPile (~1.5B-token curated Pile subset).
+# MiniPile has NO config name, so hf_name is omitted (-> None).
+#   python scripts/train_tokenizer.py --config configs/tokenizer_minipile.yaml
+tokenizer:
+  mode: bpe
+  path: artifacts/tok_minipile.json
+  vocab_size: 32000
+  min_frequency: 2
+  source: hf
+  hf_dataset: JeanKaddour/minipile
+  # hf_name: (omitted -> None)
+  text_field: text
+  sample_docs: 50000          # enough text for stable 32k merges

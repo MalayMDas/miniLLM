@@ -114,6 +114,14 @@ each run and can stall on the network; set `data.num_workers: 4` so background w
 prefetch+overlap with compute (Linux). Offline (`source: bin`) prepays once and trains
 with zero network. **For iterating many times, prefer the `.bin` on a persistent mount.**
 
+**Budget option — small corpus, fixed model size:** to fit a hard budget without shrinking
+the model, train on a smaller corpus (fewer tokens ≈ proportionally less cost). Example
+wired in: **MiniPile** (~1.5B tokens) for a ~1B model — `configs/tokenizer_minipile.yaml`
++ `configs/pretrain_minipile.yaml` (~$25–35 on 1×A100-80GB for ~1 epoch). MiniPile has no
+config name, so `--name none` (or omit `hf_name`) — handled by the scripts. Honest: 1.5B
+tokens ≪ Chinchilla's ~20B for 1B params, so the model is **undertrained** (weak benchmarks);
+a smaller model trained to ~20×params tokens would be better per dollar, but this keeps 1B.
+
 ## 3. Stage 1 — Tokenizer (32k, on a FineWeb-Edu sample)
 ```bash
 python scripts/train_tokenizer.py --config configs/tokenizer_32k.yaml
