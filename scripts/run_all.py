@@ -26,7 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from llmscratch.utils import find_latest  # noqa: E402
+from llmscratch.utils import find_latest, load_config  # noqa: E402
 
 PY = sys.executable
 
@@ -43,12 +43,14 @@ def profile(args) -> dict:
     data download into a local .bin; `time_boxed` controls whether --pretrain-minutes
     caps training (the desktop run) vs running the config's step count (cloud)."""
     if args.smoke:
-        return dict(tok_cfg="configs/model_tiny.yaml", pre_cfg="configs/pretrain_tiny.yaml",
+        return dict(name="smoke", tok_cfg="configs/model_tiny.yaml",
+                    pre_cfg="configs/pretrain_tiny.yaml",
                     sft_cfg="configs/sft_tiny.yaml", tok_path="artifacts/tok.json",
                     ckpt_dir="artifacts/ckpt_pretrain", sft_ckpt_dir="artifacts/ckpt_sft",
                     prep=None, time_boxed=False)
     if args.minipile:
-        return dict(tok_cfg="configs/tokenizer_minipile.yaml",
+        return dict(name="minipile",
+                    tok_cfg="configs/tokenizer_minipile.yaml",
                     pre_cfg="configs/pretrain_minipile.yaml",
                     sft_cfg="configs/sft_minipile.yaml",
                     tok_path="artifacts/tok_minipile.json",
@@ -59,7 +61,8 @@ def profile(args) -> dict:
                               tokens=args.prep_tokens or 1_500_000_000),
                     time_boxed=False)
     # local desktop run
-    return dict(tok_cfg="configs/tokenizer_local.yaml",
+    return dict(name="local-offline" if args.offline else "local-streaming",
+                tok_cfg="configs/tokenizer_local.yaml",
                 pre_cfg="configs/pretrain_local_offline.yaml" if args.offline
                         else "configs/pretrain_local.yaml",
                 sft_cfg="configs/sft_local.yaml", tok_path="artifacts/tok_local.json",
@@ -87,6 +90,22 @@ def main() -> None:
 
     p = profile(args)
     total0 = time.perf_counter()
+
+    # Make the active dataset explicit (so it's obvious which corpus / source is used).
+    d = load_config(ROOT / p["pre_cfg"])["data"]
+    if d["source"] == "hf":
+        where = f"STREAMING {d['hf_dataset']} ({d.get('hf_name')})"
+        hint = ("   -> network needed; expect occasional CDN retry warnings. Use --offline "
+                "(download once) or --minipile to avoid them; `pip install hf_xet` speeds it up.")
+    elif d["source"] == "bin":
+        where = f"OFFLINE {d['bin_path']} (no network)"
+        hint = ""
+    else:
+        where = f"LOCAL {d.get('corpus')}"
+        hint = ""
+    print(f"\n[profile: {p['name']}]  pretrain={p['pre_cfg']}  data: {where}")
+    if hint:
+        print(hint)
     print("TIP: watch progress with `python scripts/status.py --watch` "
           "or `tensorboard --logdir runs`.")
 
