@@ -150,6 +150,18 @@ python scripts/lm_eval_run.py --ckpt /artifacts/ckpt_pretrain_300m/step_XXXX.pt 
 Record the numbers (see the tracking table in §10). Expect HellaSwag/ARC-easy/PIQA
 above chance; MMLU/GSM8K near chance until later stages + scale.
 
+## 5.5 Fetch real post-training data (one-time, optional but recommended)
+The pipeline uses tiny placeholders unless you prepare real data; `run_all` then
+auto-uses these files:
+```bash
+python scripts/prepare_instruct.py   # UltraChat-200k -> data/instruct.jsonl
+python scripts/prepare_tools.py      # xLAM-60k       -> data/tools.jsonl
+python scripts/prepare_reason.py     # GSM8K CoT      -> data/reason.jsonl
+```
+The instruct SFT stage trains on a **merged mix** (instruct + tools + safety) in one
+pass; reasoning is a separate CoT pass. Raise `data.max_len` in the sft configs for the
+longer tool-schema sequences on real runs.
+
 ## 6. Stage 4 — Instruct SFT
 Build a chat config from real data (UltraChat / OpenHermes / Tulu subset → jsonl in
 the `{"messages":[...]}` format), set `init_from` to the base checkpoint:

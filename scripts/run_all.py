@@ -11,11 +11,12 @@ the latest checkpoint (model + optimizer + data position), trains further, then 
 downstream stage re-runs on the new checkpoint.
     python scripts/run_all.py --minipile --add-steps 2000     # 2000 more steps
 
-Stages: [prepare data] -> tokenizer -> pretrain -> eval -> instruct SFT ->
-reasoning (CoT distillation) -> quantize -> sample. Each runs as a subprocess so
-output streams live and import-order is clean. The reasoning pass trains on CoT data
-(assistant replies wrapped in <think>...</think>), so the final model emits reasoning
-tags before its answer.
+Stages: [prepare data] -> tokenizer -> pretrain -> eval -> instruct SFT (merged
+instruct + tool-use + safety) -> reasoning (CoT distillation) -> quantize -> sample.
+Each runs as a subprocess so output streams live and import-order is clean. Instruct,
+tool-use, and reasoning use REAL data when prepared (prepare_instruct.py /
+prepare_tools.py / prepare_reason.py), else tiny offline placeholders. The reasoning
+pass trains on CoT (<think>...</think>), so the final model emits reasoning tags.
 
 REVIEW PROGRESS: in another terminal run `python scripts/status.py --watch`
 or `tensorboard --logdir runs` (http://localhost:6006).
@@ -96,6 +97,12 @@ def main() -> None:
                     help="resume the existing model and train this many MORE steps")
     ap.add_argument("--prep-tokens", type=int, default=None,
                     help="tokens to pre-download (overrides the profile default)")
+    ap.add_argument("--instruct-data", default=None,
+                    help="instruct chat jsonl (default: data/instruct.jsonl if present "
+                         "from prepare_instruct.py, else the tiny placeholder)")
+    ap.add_argument("--tools-data", default=None,
+                    help="tool-call jsonl (default: data/tools.jsonl if present from "
+                         "prepare_tools.py, else the tiny placeholder)")
     ap.add_argument("--reason-data", default=None,
                     help="CoT jsonl for the reasoning stage. Default: data/reason.jsonl if "
                          "present (run scripts/prepare_reason.py to fetch real GSM8K CoT), "
@@ -158,8 +165,18 @@ def main() -> None:
     # 3. evaluate (fast local: perplexity + custom MCQ)
     run("3 evaluate", [PY, "scripts/evaluate.py", "--ckpt", ckpt, "--tokenizer", p["tok_path"]])
 
-    # 4. instruct SFT (init from the base checkpoint)
-    run("4 instruct-sft", [PY, "scripts/sft.py", "--config", p["sft_cfg"], "--init-from", ckpt])
+    # 4. instruct SFT on a MERGED mix: instruct + tool-use + safety (one pass, so no
+    # catastrophic forgetting). Each component uses real prepared data if present
+    # (prepare_instruct.py / prepare_tools.py), else the tiny offline placeholder.
+    def _pick(real, placeholder):
+        return real if (ROOT / real).exists() else placeholder
+    mix = [args.instruct_data or _pick("data/instruct.jsonl", "data/sample_chat.jsonl"),
+           args.tools_data or _pick("data/tools.jsonl", "data/sample_tools_chat.jsonl"),
+           "data/sample_safety.jsonl"]
+    mix = [m for m in mix if (ROOT / m).exists()]
+    print(f"   instruct SFT mix (instruct + tools + safety): {mix}")
+    run("4 instruct-sft", [PY, "scripts/sft.py", "--config", p["sft_cfg"],
+                           "--init-from", ckpt, "--chat-jsonl", ",".join(mix)])
     instruct_ckpt = find_latest(ROOT / p["sft_ckpt_dir"])
 
     # 5. reasoning: CoT distillation on <think>...</think> data, from the instruct model.

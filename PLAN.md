@@ -13,6 +13,10 @@ within ~a day**.
 > **Stage 12 (end-user readiness) now started:** safety/refusal eval (`eval/safety.py`),
 > refusal SFT data, model-card generator (`scripts/model_card.py`), and `READINESS.md`
 > (prompt-injection, tool sandboxing, licensing, deployment hardening).
+> **Real post-training data + tool-use in the pipeline:** `prepare_instruct.py`
+> (UltraChat), `prepare_tools.py` (xLAM), `prepare_reason.py` (GSM8K) fetch real data;
+> `run_all`'s instruct SFT now trains on a merged instruct+tool-use+safety mix (real
+> data auto-used when prepared, else placeholders).
 > Genuine remaining gaps (lower priority): FSDP/DeepSpeed (DDP only), DPO, contrastive
 > ViT pretraining, AWQ/GPTQ, decontamination, robust safety (moderation classifier).
 > See `ARCHITECTURE.md` for the map.

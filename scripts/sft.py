@@ -31,7 +31,8 @@ def main():
     ap.add_argument("--init-from", default=None,
                     help="base checkpoint path (overrides config init_from)")
     ap.add_argument("--chat-jsonl", default=None,
-                    help="override data.chat_jsonl (e.g. CoT reasoning data)")
+                    help="override data.chat_jsonl; comma-separated paths are MERGED "
+                         "(e.g. instruct + tools + safety)")
     ap.add_argument("--ckpt-dir", default=None,
                     help="override train.ckpt_dir (separate output dir for this pass)")
     args = ap.parse_args()
@@ -53,7 +54,13 @@ def main():
     else:
         print("WARNING: no base checkpoint — SFT from random init (smoke test only)")
 
-    convs = load_chat_jsonl(args.chat_jsonl or cfg["data"]["chat_jsonl"])
+    chat_arg = args.chat_jsonl or cfg["data"]["chat_jsonl"]
+    convs = []
+    for pth in [p.strip() for p in chat_arg.split(",") if p.strip()]:
+        n0 = len(convs)
+        convs += load_chat_jsonl(pth)
+        print(f"  loaded {len(convs)-n0} conversations from {pth}")
+    print(f"SFT on {len(convs)} conversations total")
     ds = SFTDataset(tok, convs, max_len=cfg["data"]["max_len"])
     loader = DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=True,
                         collate_fn=make_collate(tok.pad_id))

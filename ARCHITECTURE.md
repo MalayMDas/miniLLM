@@ -277,7 +277,10 @@ run (random windows, no network, trivial resume).
 | `run_all.py` | **Orchestrator** — runs every stage sequentially (`--smoke` or ~2h local) |
 | `demo.py` | One-command local check — runs every stage on CPU in seconds |
 | `train_tokenizer.py` | Train the byte-level BPE tokenizer from a config |
-| `prepare_data.py` | Pre-download + tokenize a sample to a local `.bin` (offline training) |
+| `prepare_data.py` | Pre-download + tokenize a sample to a local `.bin` (offline training); `--datasets` mixes corpora |
+| `prepare_instruct.py` | Fetch a real instruct dataset (UltraChat/OpenHermes) → `data/instruct.jsonl` |
+| `prepare_tools.py` | Fetch a real function-calling dataset (xLAM) → `data/tools.jsonl` |
+| `prepare_reason.py` | Fetch real CoT (GSM8K) → `data/reason.jsonl` |
 | `smoke_train.py` | Minimal end-to-end train loop (cosine LR, logging, sampling) |
 | `pretrain.py` | Base pretraining — single-GPU or DDP via `torchrun`; auto-resume |
 | `sft.py` | Instruct/tool SFT from a base checkpoint |
