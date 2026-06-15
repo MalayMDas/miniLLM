@@ -186,7 +186,7 @@ a training signal**. Two mechanics recur and are worth fixing in your head first
 | **Base pretrain** | `HuggingFaceFW/fineweb-edu` (sample-10BT), streamed | `{"text": "<web document>"}` | tokenize → `[BOS] doc [EOS] [BOS] doc …` → pack into `block_size` windows → next-token prediction over every token |
 | **Instruct SFT** | UltraChat / OpenHermes / Tulu subset (→ jsonl) | `{"messages": [{"role","content"}, …]}` | render ChatML with special tokens; **mask all but assistant tokens**; next-token loss on the assistant reply |
 | **Tool-use SFT** | xLAM / Hermes-function-calling (our `sample_tools_chat.jsonl`) | messages where assistant emits `<tool_call>{json}</tool_call>` and a `tool` role returns the result | same as SFT; assistant turns (incl. the tool call) are unmasked, `user`+`tool` turns masked → learns *when/how to call* + how to answer from the result |
-| **Reasoning — CoT distill** | OpenMathReasoning / OpenR1 traces | assistant content = `<think>{reasoning}</think>{answer}` | SFT on the trace; loss on the whole assistant turn → learns to reason step-by-step then answer |
+| **Reasoning — CoT distill** | GSM8K (via `prepare_reason.py`) / OpenR1 traces | assistant content = `<think>{reasoning}</think>{answer}` | folded into the **merged SFT pass** (with instruct/tools/safety) so it learns to reason without forgetting chat; loss on the whole assistant turn |
 | **Reasoning — GRPO (RL)** | math prompts with **verifiable** answers (GSM8K-style) | `{question, gold_answer}` — *no target completion* | sample G completions per prompt → reward = is-answer-correct → group-normalized advantage → policy-gradient update (online, no labels to imitate) |
 | **Multimodal** | LAION/COCO/LLaVA mixture (our synthetic color set offline) | `{image: tensor[3,H,W], text}`; prompt holds `<image>` placeholder tokens | image → encoder(ViT/SigLIP) → projector → embeddings **spliced into the `<image>` positions**; next-token loss on the caption/answer (assistant-masked). Phase 1 trains projector only; phase 2 + LLM |
 | **Evaluation** | HellaSwag, OpenBookQA, GSM8K, BFCL, VQAv2 | see below | **no training** — measurement only |
@@ -236,12 +236,11 @@ exist).
 **Stage order:**
 ```
 tokenizer → [1b prep pretrain .bin] → [1c prep REAL post-train data]
-   → pretrain (resumable, time-boxed or step-count)
+   → pretrain (resumable, time-boxed or step-count; VRAM preflight + bin-size warning)
    → base eval (stage 3)
-   → instruct SFT  (MERGED: instruct + tool-use + safety, one pass → no forgetting)
-   → reasoning (CoT distillation on <think> data)
+   → SFT — ONE merged pass: instruct + tool-use + safety + reasoning(CoT) → no forgetting
    → final eval (perplexity+MCQ; + real benchmarks for real-data profiles)
-   → quantize → sample (emits <think>…</think>)
+   → quantize → sample (chats; emits <think>…</think> when reasoning)
 ```
 
 **Profiles** (`--flag`), each a self-contained config/ckpt set so they never collide:
@@ -255,13 +254,22 @@ tokenizer → [1b prep pretrain .bin] → [1c prep REAL post-train data]
 | `--minipile` | ~1B | MiniPile `.bin` | real | 40–80 GB | once (prep) |
 
 **Key design points**
-- **Merged SFT mix:** instruct + tool-use + safety train in *one* SFT pass (not chained
-  passes), avoiding catastrophic forgetting; each component auto-uses real prepared data
-  (`prepare_instruct/tools/reason`) if present, else a tiny offline placeholder.
+- **Merged SFT mix (incl. reasoning):** instruct + tool-use + safety + reasoning-CoT train
+  in *one* shuffled SFT pass, not chained passes. **Why it matters:** a separate
+  reasoning pass on GSM8K-only data made the model answer *every* prompt with math
+  (catastrophic forgetting) — training all four together keeps general chat *and* teaches
+  `<think>` reasoning. (GRPO RL remains an optional separate stage.) Each component
+  auto-uses real prepared data (`prepare_instruct/tools/reason`) if present, else a tiny
+  offline placeholder.
 - **Real vs placeholder:** the `prepare_*` scripts fetch real data once → `data/*.jsonl`;
   `run_all` detects and uses them. Keeps `--smoke`/`--offline` fully offline.
 - **Final vs base eval:** the model is eval'd after pretraining *and* after all
   post-training, so you can read what each stage bought.
+- **Guardrails (fail fast, not silently):** pretrain runs a **VRAM preflight** (aborts
+  with a clear message if `params×16B` won't fit — on Windows an oversize model otherwise
+  spills to shared RAM and *looks stuck*); a **bin-size/epochs warning** (small corpus ⇒
+  memorization: low train loss, huge held-out perplexity); and `run_all` **fails stages
+  cleanly** (exit code + one-line stop, no buried traceback).
 - **Time-box vs steps:** desktop profiles stop on `--pretrain-minutes`; cloud profiles
   run the config's `steps`. `--add-steps N` extends a finished model with a fresh schedule.
 
@@ -497,5 +505,6 @@ streaming loader (next stage), set `logging.backend: wandb`, launch via SkyPilot
 - *Why not a vision encoder fully from scratch for quality?* → compute-prohibitive; toggle to SigLIP and only train the projector.
 - *How do you validate the model isn't just memorizing position?* → causality test + held-out eval via lm-eval-harness with decontamination.
 - *You hand-wrote the model — how do you use vLLM/TRL/GGUF then?* → export to a real `transformers.LlamaForCausalLM`; our RoPE matches HF `rotate_half`, so weights map with no permutation — verified logit-identical (~5e-7). From there vLLM/TRL/lm-eval/llama.cpp all work.
-- *How do you add tool-use without forgetting chat?* → fold tool-call data into the instruct SFT as one *merged* mixture (instruct + tools + safety), not chained passes.
+- *How do you add tool-use/reasoning without forgetting chat?* → train one *merged* SFT mixture (instruct + tools + safety + CoT), not chained passes. War story: a separate GSM8K-only reasoning pass made a small model answer *every* prompt with math (catastrophic forgetting) — merging fixed it. Small models forget the previous task fast; keep the data balanced in one pass.
+- *Run looks stuck / model gives garbage?* → two guards: a **VRAM preflight** (oversize model on Windows spills to shared RAM and crawls, not OOM) and a **bin-size warning** (small corpus ⇒ memorization: ~0 train loss but ~1e6 held-out perplexity).
 - *Real or toy datasets?* → `prepare_{instruct,tools,reason}.py` fetch UltraChat / xLAM / GSM8K; `--minipile-local` runs the full real pipeline (web+code pretrain → real SFT → final benchmarks); placeholders keep offline runs working.
