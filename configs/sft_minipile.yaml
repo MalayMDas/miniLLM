@@ -1,0 +1,42 @@
+# Instruct SFT for the ~1B MiniPile base model. Dims MUST match pretrain_minipile.yaml.
+# init_from is injected by run_all.py (the latest base checkpoint). The sample chat set
+# is a tiny placeholder — swap data.chat_jsonl for a real instruct mixture for quality.
+model:
+  dim: 2048
+  n_layers: 20
+  n_heads: 16
+  n_kv_heads: 8
+  max_seq_len: 2048
+  dropout: 0.0
+
+tokenizer:
+  mode: bpe
+  path: artifacts/tok_minipile.json
+  vocab_size: 32000
+
+init_from: null            # set via run_all.py / --init-from
+
+data:
+  chat_jsonl: data/sample_chat.jsonl
+  max_len: 1024
+
+train:
+  steps: 300
+  time_budget_min: 20
+  lr: 0.00005
+  warmup_steps: 20
+  weight_decay: 0.0
+  grad_accum: 4
+  batch_size: 2
+  device: auto
+  amp: true
+  compile: false
+  log_every: 20
+  ckpt_every: 0
+  ckpt_dir: artifacts/ckpt_sft_minipile
+  seed: 1337
+
+logging:
+  backend: tensorboard
+  logdir: runs
+  run_name: sft_minipile
