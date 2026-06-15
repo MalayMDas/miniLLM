@@ -52,10 +52,20 @@ def profile(args) -> dict:
                     pre_cfg="configs/pretrain_tiny.yaml",
                     sft_cfg="configs/sft_tiny.yaml", tok_path="artifacts/tok.json",
                     ckpt_dir="artifacts/ckpt_pretrain", sft_ckpt_dir="artifacts/ckpt_sft",
-                    reason_ckpt_dir="artifacts/ckpt_reason", prep=None, time_boxed=False)
+                    reason_ckpt_dir="artifacts/ckpt_reason", prep=None,
+                    real_posttrain=False, time_boxed=False)
     if args.minipile or args.minipile_local:
         local = args.minipile_local
         sfx = "_local" if local else ""
+        # local: pretrain on a MiniPile + code MIX and use REAL post-training data.
+        prep = (dict(mix=True,
+                     datasets="JeanKaddour/minipile,bigcode/the-stack-smol",
+                     names="none,none", data_dirs=",data/python",
+                     text_fields="text,content", weights="0.9,0.1",
+                     out="data/minipile_code.bin", tokens=args.prep_tokens or 1_500_000_000)
+                if local else
+                dict(dataset="JeanKaddour/minipile", name="none",
+                     out="data/minipile.bin", tokens=args.prep_tokens or 1_500_000_000))
         return dict(name="minipile-local" if local else "minipile",
                     tok_cfg="configs/tokenizer_minipile.yaml",
                     pre_cfg=f"configs/pretrain_minipile{'_local' if local else ''}.yaml",
@@ -64,10 +74,9 @@ def profile(args) -> dict:
                     ckpt_dir=f"artifacts/ckpt_pretrain_minipile{sfx}",
                     sft_ckpt_dir=f"artifacts/ckpt_sft_minipile{sfx}",
                     reason_ckpt_dir=f"artifacts/ckpt_reason_minipile{sfx}",
-                    prep=dict(dataset="JeanKaddour/minipile", name="none",
-                              out="data/minipile.bin",
-                              tokens=args.prep_tokens or 1_500_000_000),
-                    time_boxed=local)   # local run is time-boxed; cloud runs the step count
+                    prep=prep,
+                    real_posttrain=local,   # fetch real instruct/tools/reasoning data
+                    time_boxed=local)       # local is time-boxed; cloud runs the step count
     # local desktop run
     return dict(name="local-offline" if args.offline else "local-streaming",
                 tok_cfg="configs/tokenizer_local.yaml",
@@ -80,7 +89,7 @@ def profile(args) -> dict:
                 prep=(dict(dataset="HuggingFaceFW/fineweb-edu", name="sample-10BT",
                            out="data/fineweb_local.bin", tokens=args.prep_tokens or 100_000_000)
                       if args.offline else None),
-                time_boxed=True)
+                real_posttrain=False, time_boxed=True)
 
 
 def main() -> None:
@@ -136,16 +145,32 @@ def main() -> None:
     else:
         run("1 tokenizer", [PY, "scripts/train_tokenizer.py", "--config", p["tok_cfg"]])
 
-    # 1b. one-time data prep into a local .bin (offline / minipile)
+    # 1b. one-time pretraining-data prep into a local .bin (offline / minipile [+ code])
     if p["prep"]:
         prep, out = p["prep"], ROOT / p["prep"]["out"]
         if out.exists():
-            print(f"[1b] local corpus exists ({out.name}) - skipping prep")
+            print(f"[1b] pretrain corpus exists ({out.name}) - skipping prep")
         else:
-            run("1b prepare-data", [PY, "scripts/prepare_data.py",
-                                    "--tokenizer", p["tok_path"], "--dataset", prep["dataset"],
-                                    "--name", prep["name"], "--out", prep["out"],
-                                    "--tokens", str(prep["tokens"])])
+            cmd = [PY, "scripts/prepare_data.py", "--tokenizer", p["tok_path"],
+                   "--out", prep["out"], "--tokens", str(prep["tokens"])]
+            if prep.get("mix"):     # MiniPile + code
+                cmd += ["--datasets", prep["datasets"], "--names", prep["names"],
+                        "--weights", prep["weights"], "--text-fields", prep["text_fields"],
+                        "--data-dirs", prep["data_dirs"]]
+            else:
+                cmd += ["--dataset", prep["dataset"], "--name", prep["name"]]
+            run("1b prepare-data", cmd)
+
+    # 1c. fetch REAL post-training data (instruct/tools/reasoning) once, if the profile
+    # wants it. run_all auto-uses these files in the SFT mix + reasoning stage below.
+    if p.get("real_posttrain"):
+        for script, outf in [("prepare_instruct.py", "data/instruct.jsonl"),
+                             ("prepare_tools.py", "data/tools.jsonl"),
+                             ("prepare_reason.py", "data/reason.jsonl")]:
+            if (ROOT / outf).exists():
+                print(f"[1c] {outf} exists - skipping {script}")
+            else:
+                run(f"1c {script}", [PY, f"scripts/{script}"])
 
     # 2. base pretraining (resumes from latest ckpt automatically if present)
     pre_cmd = [PY, "scripts/pretrain.py", "--config", p["pre_cfg"]]
@@ -193,13 +218,23 @@ def main() -> None:
                                   "--ckpt-dir", p["reason_ckpt_dir"]])
         final_ckpt = find_latest(ROOT / p["reason_ckpt_dir"]) or instruct_ckpt
 
-    # 6. quantize the base (size/quality report)
-    run("6 quantize", [PY, "scripts/quantize.py", "--ckpt", ckpt, "--tokenizer", p["tok_path"]])
+    # 6. FINAL eval on the fully-trained model (perplexity + MCQ; real benchmarks too
+    # when we used real data). Compare against the base eval in stage 3.
+    if final_ckpt is not None:
+        fck = str(final_ckpt)
+        run("6 final-eval", [PY, "scripts/evaluate.py", "--ckpt", fck, "--tokenizer", p["tok_path"]])
+        if p.get("real_posttrain"):
+            run("6b benchmarks", [PY, "scripts/benchmark.py", "--ckpt", fck,
+                                  "--tokenizer", p["tok_path"],
+                                  "--tasks", "hellaswag,openbookqa,gsm8k,bfcl", "--limit", "100"])
 
-    # 7. final sample from the REASONING model (should emit <think>...</think>)
+    # 7. quantize the base (size/quality report)
+    run("7 quantize", [PY, "scripts/quantize.py", "--ckpt", ckpt, "--tokenizer", p["tok_path"]])
+
+    # 8. final sample from the REASONING model (should emit <think>...</think>)
     sft_ckpt = final_ckpt
     if sft_ckpt:
-        run("7 sample (reasoning)", [PY, "-c",
+        run("8 sample (reasoning)", [PY, "-c",
             "import sys; sys.path.insert(0,'src');"
             "import torch;"
             "from llmscratch.model import Decoder, ModelConfig;"

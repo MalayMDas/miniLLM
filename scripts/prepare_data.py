@@ -53,6 +53,10 @@ def main():
     ap.add_argument("--names", default=None, help="comma list of config names (use 'none')")
     ap.add_argument("--weights", default=None, help="comma list of mixing weights")
     ap.add_argument("--text-fields", default=None, help="comma list of text fields (code uses 'content')")
+    ap.add_argument("--data-dir", default=None, help="single-dataset data_dir (subset)")
+    ap.add_argument("--data-dirs", default=None,
+                    help="comma list of data_dirs for --datasets (blank entry = none); "
+                         "e.g. the-stack-smol code lives under 'data/python'")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -62,8 +66,9 @@ def main():
 
     from datasets import load_dataset
 
-    def doc_stream(dataset, name, field):
-        ds = load_dataset(dataset, name=_norm_name(name), split="train", streaming=True)
+    def doc_stream(dataset, name, field, data_dir=None):
+        ds = load_dataset(dataset, name=_norm_name(name), split="train", streaming=True,
+                          data_dir=(data_dir or None))
         for ex in ds:
             yield ex[field]
 
@@ -74,16 +79,18 @@ def main():
         names = (args.names.split(",") if args.names else ["none"] * n)
         fields = (args.text_fields.split(",") if args.text_fields else ["text"] * n)
         weights = ([float(w) for w in args.weights.split(",")] if args.weights else [1.0] * n)
-        if not (len(names) == len(fields) == len(weights) == n):
-            raise SystemExit("--datasets/--names/--weights/--text-fields must have equal length")
+        ddirs = (args.data_dirs.split(",") if args.data_dirs else [""] * n)
+        if not (len(names) == len(fields) == len(weights) == len(ddirs) == n):
+            raise SystemExit("--datasets/--names/--weights/--text-fields/--data-dirs must have equal length")
         from llmscratch.data.mixing import weighted_interleave
         print(f"mixing {n} datasets: " +
               ", ".join(f"{d}({w})" for d, w in zip(dsets, weights)))
-        streams = [doc_stream(d, nm.strip(), fl.strip()) for d, nm, fl in zip(dsets, names, fields)]
+        streams = [doc_stream(d, nm.strip(), fl.strip(), dd.strip())
+                   for d, nm, fl, dd in zip(dsets, names, fields, ddirs)]
         docs = weighted_interleave(streams, weights, seed=args.seed)
         meta_src = {"datasets": dsets, "weights": weights}
     else:
-        docs = doc_stream(args.dataset, args.name, args.text_field)
+        docs = doc_stream(args.dataset, args.name, args.text_field, args.data_dir)
         meta_src = {"dataset": args.dataset, "name": args.name}
 
     out = Path(args.out)

@@ -91,10 +91,12 @@ One orchestrator runs every stage sequentially on a ~25M model + real FineWeb-Ed
 ```bash
 python scripts/run_all.py --smoke           # FIRST: verify wiring offline (~1 min)
 python scripts/run_all.py --pretrain-minutes 100   # the real ~2h run (needs internet)
-python scripts/run_all.py --minipile-local  # ~41M model on MiniPile data, fits 6 GB
+python scripts/run_all.py --minipile-local  # ~41M, fits 6 GB; full REAL pipeline
 ```
-(`--minipile-local` reuses `data/minipile.bin`; `--minipile` is the ~1B cloud variant
-that needs a 40–80 GB GPU.)
+`--minipile-local` is a full real run: pretrains on a **MiniPile + code** mix, fetches
+**real** instruct (UltraChat) / tool-use (xLAM) / reasoning (GSM8K) data for SFT, and
+ends with a **final eval** (perplexity + HellaSwag/OpenBookQA/GSM8K/BFCL). One-time
+downloads; re-runs reuse them. `--minipile` is the ~1B cloud variant (40–80 GB GPU).
 It does **tokenizer → pretrain → eval → instruct SFT → reasoning (CoT) → quantize →
 sample**. The reasoning pass trains on `<think>…</think>` data, so the final model
 emits reasoning tags before its answer. By default it uses a tiny placeholder
