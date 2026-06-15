@@ -5,10 +5,14 @@ and *use* a small multimodal LLM. **Framework-first** (PyTorch + HuggingFace
 ecosystem), targeting **< $500** on rented multi-GPU, with **per-stage runs that fit
 within ~a day**.
 
-> **Build status:** every stage below is implemented and runs locally at tiny scale
-> (27 tests passing). What remains is *scaling up* — real data volume, multi-GPU
-> (FSDP/DeepSpeed), and the actual cloud training run — not new components. See
-> `ARCHITECTURE.md` for the file-by-file map.
+> **Build status (45 tests passing):** all stages run locally at tiny scale. Now also
+> done: **HF `LlamaForCausalLM` export** (numerically exact → TRL/vLLM/lm-eval/GGUF),
+> **GGUF export** (llama.cpp), and **dataset mixing** (web text + code). Deliberate
+> deviations from the original plan: **GCP Terraform → Docker + SkyPilot** (cheaper
+> providers), **TRL → our own transparent Trainer/SFT/GRPO** (for learning).
+> Genuine remaining gaps (lower priority): FSDP/DeepSpeed (DDP only), DPO, contrastive
+> ViT pretraining, AWQ/GPTQ, decontamination, and Stage 12 end-user readiness
+> (model card, safety/refusal eval, tool sandboxing). See `ARCHITECTURE.md` for the map.
 
 ---
 

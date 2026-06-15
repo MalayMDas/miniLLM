@@ -191,7 +191,33 @@ Eval with `llmscratch.eval.tasks.evaluate_vqa` on a VQAv2 slice (needs COCO imag
 Fill from `lm_eval_run.py` + `benchmark.py`. This per-stage table is the single most
 useful output — it shows what each stage *buys*.
 
-## 11. Quantize + serve
+## 10.5 Mixing in code data (optional)
+A small fraction of code helps the model read/write code. Mix datasets into one `.bin`:
+```bash
+python scripts/prepare_data.py --tokenizer artifacts/tok_32k.json \
+  --datasets "HuggingFaceFW/fineweb-edu,bigcode/the-stack-smol" \
+  --names "sample-10BT,none" --text-fields "text,content" --weights "0.9,0.1" \
+  --tokens 3000000000 --out /data-cache/mix.bin
+```
+(`weighted_interleave` governs the ratio over the consumed prefix; code uses the
+`content` field, not `text`.)
+
+## 11. Export for real serving / low-VRAM (HF → vLLM / GGUF)
+Our checkpoint exports to a **genuine HF `LlamaForCausalLM`** (verified numerically
+identical), which unlocks the standard toolchain:
+```bash
+# HF folder -> serve with vLLM, or eval with lm-eval-harness:
+python scripts/export_hf.py --ckpt <ckpt> --tokenizer artifacts/tok_32k.json --out artifacts/hf_model
+vllm serve artifacts/hf_model                                  # OpenAI API, high throughput
+lm_eval --model hf --model_args pretrained=artifacts/hf_model --tasks hellaswag
+
+# GGUF for llama.cpp / Ollama / LM Studio (CPU / Apple / low-VRAM):
+git clone https://github.com/ggerganov/llama.cpp
+python scripts/export_gguf.py --ckpt <ckpt> --tokenizer artifacts/tok_32k.json \
+  --llama-cpp ./llama.cpp --out artifacts/model.gguf --quantize Q4_K_M
+```
+
+## 12. Quantize + serve (our transparent path)
 ```bash
 python scripts/quantize.py --ckpt /artifacts/ckpt_sft/step_XXXX.pt   # size/quality report
 # serve our model (understanding) ...
@@ -201,14 +227,14 @@ python -m llmscratch.serve.api --ckpt <ckpt> --tokenizer artifacts/tok_32k.json
 
 ---
 
-## 12. Cost controls (do these or you will overspend)
+## 13. Cost controls (do these or you will overspend)
 - **Always use Spot/preemptible** + `sky jobs launch` (auto-recovery).
 - **Checkpoint to object storage** every `ckpt_every`; `find_latest` resume is built in.
 - **Autostop idle clusters**: `sky autostop -i 10 llm-train` (or `sky down` when done).
 - **Set a provider budget alert** (e.g. $400) — belt and suspenders.
 - Start each stage at **tiny scale on 1 GPU** to confirm it runs before booking 8.
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 | Symptom | Cause → Fix |
 |---|---|
 | CUDA OOM | batch too big → lower `batch_size`, raise `grad_accum`; enable grad checkpointing; if model doesn't fit, switch DDP→**FSDP/DeepSpeed** via `accelerate config` (loop unchanged). |
@@ -219,7 +245,7 @@ python -m llmscratch.serve.api --ckpt <ckpt> --tokenizer artifacts/tok_32k.json
 | Throughput low | small batch / no FlashAttention → raise batch, ensure bf16 + SDPA flash kernels; check `tokens_per_sec` in W&B. |
 | Resume starts at step 0 | `ckpt_dir` not persisted (Spot wiped local disk) → point it at the mounted bucket. |
 
-## 14. Teardown
+## 15. Teardown
 ```bash
 sky down llm-train          # or terminate the pod in the provider console
 ```

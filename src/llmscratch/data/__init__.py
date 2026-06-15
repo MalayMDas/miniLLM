@@ -1,8 +1,9 @@
 from .text import iter_local_lines, PackedDataset, encode_corpus
 from .chat import render_chat, build_prompt, IGNORE
+from .mixing import weighted_interleave
 
 __all__ = [
     "iter_local_lines", "PackedDataset", "encode_corpus",
-    "render_chat", "build_prompt", "IGNORE",
+    "render_chat", "build_prompt", "IGNORE", "weighted_interleave",
 ]
 # hf_stream imported lazily (needs `datasets`); see data.hf_stream.packed_hf_stream

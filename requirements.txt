@@ -9,7 +9,7 @@ tensorboard>=2.15       # local experiment tracking / progress dashboard
 
 # Optional, per feature (install when needed):
 # serving API:        fastapi uvicorn pydantic
-# pretrained vision:  transformers            (SigLIP toggle in vision/encoder.py)
+# HF export + vision: transformers            (export_hf / SigLIP toggle)
 # official benchmarks: lm-eval            (scripts/lm_eval_run.py)
 # scale-up / cloud:   accelerate deepspeed flash-attn trl vllm bitsandbytes
 # better RAG:         sentence-transformers faiss-cpu chromadb

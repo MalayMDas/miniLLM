@@ -232,11 +232,13 @@ run (random windows, no network, trivial resume).
 | `compare.py` | CLI to *measure* UTF-8 vs BPE token counts on a sample |
 | **src/llmscratch/model/** | |
 | `decoder.py` | Llama-style decoder: RMSNorm, RoPE, SwiGLU, GQA, SDPA, generate(), `ModelConfig` |
+| `hf_export.py` | Export our Decoder → genuine `transformers.LlamaForCausalLM` (numerically exact; unlocks TRL/vLLM/lm-eval/GGUF) |
 | **src/llmscratch/data/** | |
 | `text.py` | `iter_local_lines`, `encode_corpus`, `PackedDataset` (next-token windows) |
 | `chat.py` | ChatML rendering + assistant-only loss masking; inference prompt builder |
 | `hf_stream.py` | Streaming HF corpus (FineWeb-Edu) packed into blocks; `skip_blocks` resumes through the corpus (`datasets`) |
 | `bin_data.py` | Train from a pre-tokenized local `.bin` (offline, random windows, no network) |
+| `mixing.py` | `weighted_interleave` — mix multiple corpora (e.g. web text + code) by weight |
 | **src/llmscratch/train/** | |
 | `trainer.py` | Reusable loop: grad accum, cosine LR, clip, bf16, eval/ckpt hooks |
 | **src/llmscratch/align/** | |
@@ -283,6 +285,8 @@ run (random windows, no network, trivial resume).
 | `benchmark.py` | Real benchmarks (HellaSwag/OpenBookQA/GSM8K/BFCL) — local, no API |
 | `lm_eval_run.py` | Run EleutherAI lm-eval-harness (official, comparable numbers) |
 | `quantize.py` | Quantize a checkpoint; report size + perplexity delta |
+| `export_hf.py` | Export a checkpoint to a HF Llama folder (TRL / vLLM / lm-eval) |
+| `export_gguf.py` | Export to GGUF via llama.cpp (CPU / low-VRAM, "runs anywhere") |
 | `chat.py` | **Prompt your own model** — interactive REPL or `--prompt`; chat/complete modes |
 | `status.py` | Check live loss/throughput from `metrics.jsonl` (no browser); `--watch` |
 | `check_ddp.py` | Verify the DDP path locally (2 ranks, CPU, FileStore) |

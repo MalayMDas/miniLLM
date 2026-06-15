@@ -36,6 +36,20 @@ def test_skip_beyond_end_yields_nothing():
     assert _stream(len(full) + 100) == []
 
 
+def test_weighted_interleave_mixes_by_weight():
+    from itertools import islice
+    from llmscratch.data import weighted_interleave
+    # weights govern the order/rate; real use consumes a PREFIX (the token budget),
+    # where the ratio holds. Sources large enough not to exhaust within the prefix.
+    a, b = ["a"] * 5000, ["b"] * 5000
+    prefix = list(islice(weighted_interleave([iter(a), iter(b)], [0.8, 0.2], seed=0), 1000))
+    frac_a = prefix.count("a") / len(prefix)
+    assert 0.7 < frac_a < 0.9               # ~80% from source a over the prefix
+    # exhausting one source keeps yielding from the other
+    short = list(weighted_interleave([iter(["x", "x"]), iter(["y"] * 50)], [0.5, 0.5], seed=1))
+    assert short.count("y") == 50 and short.count("x") == 2
+
+
 def test_bin_dataset_yields_windows(tmp_path):
     import numpy as np
     from llmscratch.data.bin_data import BinDataset
