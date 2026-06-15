@@ -250,6 +250,7 @@ python -m llmscratch.serve.api --ckpt <ckpt> --tokenizer artifacts/tok_32k.json
 | Symptom | Cause → Fix |
 |---|---|
 | CUDA OOM | batch too big → lower `batch_size`, raise `grad_accum`; enable grad checkpointing; if model doesn't fit, switch DDP→**FSDP/DeepSpeed** via `accelerate config` (loop unchanged). |
+| Run "looks stuck" (no step logs) | model too big for the GPU → on Windows the driver spills to slow shared system RAM instead of OOM-ing. `pretrain.py` now runs a **VRAM preflight** that aborts with a clear message; use a smaller profile (`--minipile-local`) or `--allow-oversize` to override. Also note: `source: bin` does NOT download (banner shows OFFLINE). |
 | Job killed mid-run | Spot preemption → relaunch same command; it auto-resumes from latest ckpt. |
 | `loss` is NaN | LR too high / no warmup → lower `lr`, increase `warmup_steps`; confirm bf16 (not fp16). |
 | Segfault on dataset load (Windows) | torch imported before pyarrow → already guarded in our scripts (`import datasets` first). Non-issue on Linux. |

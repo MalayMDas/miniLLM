@@ -53,6 +53,30 @@ def maybe_compile(model, tcfg, is_main: bool):
     return torch.compile(model, mode=mode)
 
 
+def vram_preflight(model, device, allow_oversize, is_main):
+    """Fail fast if the model can't fit training memory. Without this, Windows silently
+    spills overflow into shared system RAM and the run *looks stuck* (crawls) instead of
+    erroring. The floor (params x 16B: fp32 param+grad + AdamW m,v) ignores activations,
+    so if even that exceeds VRAM it definitely won't fit."""
+    if not device.startswith("cuda"):
+        return
+    n = sum(p.numel() for p in model.parameters())
+    floor_gb = n * 16 / 1e9
+    total_gb = torch.cuda.get_device_properties(device).total_memory / 1e9
+    if is_main:
+        print(f"[vram] training floor ~{floor_gb:.1f} GB (params+grads+AdamW) vs "
+              f"{total_gb:.1f} GB GPU")
+    if floor_gb > 0.9 * total_gb and not allow_oversize:
+        raise SystemExit(
+            f"\n[vram preflight] This model needs >= {floor_gb:.1f} GB for "
+            f"params+grads+AdamW alone, but the GPU has only {total_gb:.1f} GB.\n"
+            f"On Windows the driver would spill to shared system RAM and the run would "
+            f"CRAWL (look stuck), not OOM.\n"
+            f"  Fix: use a smaller profile (e.g. run_all.py --minipile-local) or a "
+            f"smaller model config; on multi-GPU use FSDP/DeepSpeed; or pass "
+            f"--allow-oversize to override.")
+
+
 def step_from_ckpt(path) -> int:
     """Parse the step from a 'step_0000300.pt' checkpoint filename (cheap, no load)."""
     try:
@@ -110,6 +134,8 @@ def main():
     ap.add_argument("--add-steps", type=int, default=None,
                     help="resume the latest checkpoint and train this many MORE steps "
                          "(fresh warmup+cosine over the new steps)")
+    ap.add_argument("--allow-oversize", action="store_true",
+                    help="skip the VRAM preflight (e.g. unified-memory / you know it fits)")
     args = ap.parse_args()
     cfg = load_config(args.config)
     dist = setup_distributed()
@@ -125,6 +151,7 @@ def main():
     if dist.is_main:
         print(f"params: {model.num_params()/1e6:.2f}M | device: {device} | "
               f"world_size: {dist.world_size}")
+    vram_preflight(model, device, args.allow_oversize, dist.is_main)
 
     if dist.distributed:
         from torch.nn.parallel import DistributedDataParallel as DDP
