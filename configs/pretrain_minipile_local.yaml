@@ -1,0 +1,44 @@
+# Train a SMALL (~40M) model on MiniPile LOCALLY (6 GB GPU, e.g. RTX 3060), reusing
+# the data/minipile.bin you already prepared. The 1B configs/pretrain_minipile.yaml is
+# a CLOUD config (40-80 GB GPU) and will OOM on a 6 GB card — use this instead locally.
+#   python scripts/pretrain.py --config configs/pretrain_minipile_local.yaml --minutes 100
+# (Chat the result with --tokenizer artifacts/tok_minipile.json.)
+model:
+  dim: 512
+  n_layers: 8
+  n_heads: 8
+  n_kv_heads: 4
+  max_seq_len: 512
+  dropout: 0.0
+
+tokenizer:
+  mode: bpe
+  path: artifacts/tok_minipile.json      # same tokenizer the .bin was built with
+  vocab_size: 32000
+
+data:
+  source: bin
+  bin_path: data/minipile.bin            # the file you already downloaded (~3 GB)
+  block_size: 512
+  num_workers: 0                          # Windows: keep 0
+
+train:
+  steps: 1000000
+  time_budget_min: 100
+  lr: 0.0006
+  warmup_steps: 100
+  weight_decay: 0.1
+  grad_accum: 8
+  batch_size: 8                           # drop to 4 if you hit CUDA OOM
+  device: auto
+  amp: true
+  compile: false                          # Triton/torch.compile is unreliable on Windows
+  log_every: 20
+  ckpt_every: 500
+  ckpt_dir: artifacts/ckpt_pretrain_minipile_local
+  seed: 1337
+
+logging:
+  backend: tensorboard                    # no wandb account needed
+  logdir: runs
+  run_name: pretrain_minipile_local

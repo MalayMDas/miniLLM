@@ -109,9 +109,16 @@ def build_logger(cfg: Dict[str, Any], run_name: str, config: Dict[str, Any]) -> 
     backend = cfg.get("backend", "tensorboard")
     if backend == "none":
         return NoopLogger()
+    if backend == "wandb":
+        # wandb is optional: fall back to TensorBoard if it isn't installed, so a
+        # cloud config doesn't crash a local run that lacks the dependency.
+        try:
+            return WandbLogger(cfg.get("project", "llm-from-scratch"), run_name, config)
+        except ImportError:
+            print("[logger] wandb not installed -> using TensorBoard "
+                  "(`pip install wandb` for hosted tracking).")
+            backend = "tensorboard"
     if backend == "tensorboard":
         logdir = Path(cfg.get("logdir", "runs")) / run_name
         return TensorBoardLogger(logdir)
-    if backend == "wandb":
-        return WandbLogger(cfg.get("project", "llm-from-scratch"), run_name, config)
     raise ValueError(f"unknown logger backend: {backend}")
