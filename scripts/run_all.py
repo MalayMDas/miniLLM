@@ -201,51 +201,41 @@ def main() -> None:
     # 3. evaluate (fast local: perplexity + custom MCQ)
     run("3 evaluate", [PY, "scripts/evaluate.py", "--ckpt", ckpt, "--tokenizer", p["tok_path"]])
 
-    # 4. instruct SFT on a MERGED mix: instruct + tool-use + safety (one pass, so no
-    # catastrophic forgetting). Each component uses real prepared data if present
-    # (prepare_instruct.py / prepare_tools.py), else the tiny offline placeholder.
+    # 4. SFT on ONE balanced merged mix: instruct + tool-use + safety + reasoning(CoT).
+    # Doing reasoning as a *separate* pass on GSM8K-only data made the model answer EVERY
+    # question with math (catastrophic forgetting). Training all four together in a single
+    # pass keeps general chat AND teaches <think> reasoning, without the collapse. Each
+    # component uses real prepared data if present, else a tiny offline placeholder.
     def _pick(real, placeholder):
         return real if (ROOT / real).exists() else placeholder
     mix = [args.instruct_data or _pick("data/instruct.jsonl", "data/sample_chat.jsonl"),
            args.tools_data or _pick("data/tools.jsonl", "data/sample_tools_chat.jsonl"),
-           "data/sample_safety.jsonl"]
+           "data/sample_safety.jsonl",
+           args.reason_data or _pick("data/reason.jsonl", "data/sample_reason.jsonl")]
     mix = [m for m in mix if (ROOT / m).exists()]
-    print(f"   instruct SFT mix (instruct + tools + safety): {mix}")
-    run("4 instruct-sft", [PY, "scripts/sft.py", "--config", p["sft_cfg"],
-                           "--init-from", ckpt, "--chat-jsonl", ",".join(mix)])
-    instruct_ckpt = find_latest(ROOT / p["sft_ckpt_dir"])
-
-    # 5. reasoning: CoT distillation on <think>...</think> data, from the instruct model.
-    # Prefer real GSM8K CoT (data/reason.jsonl from prepare_reason.py); else placeholder.
-    reason_data = (args.reason_data
-                   or ("data/reason.jsonl" if (ROOT / "data/reason.jsonl").exists()
-                       else "data/sample_reason.jsonl"))
-    final_ckpt = instruct_ckpt
-    if instruct_ckpt is not None:
-        print(f"   reasoning CoT data: {reason_data}")
-        run("5 reasoning (CoT)", [PY, "scripts/sft.py", "--config", p["sft_cfg"],
-                                  "--init-from", str(instruct_ckpt),
-                                  "--chat-jsonl", reason_data,
-                                  "--ckpt-dir", p["reason_ckpt_dir"]])
-        final_ckpt = find_latest(ROOT / p["reason_ckpt_dir"]) or instruct_ckpt
+    print(f"   SFT mix (instruct + tools + safety + reasoning): {mix}")
+    run("4 sft (instruct+tools+safety+reasoning)",
+        [PY, "scripts/sft.py", "--config", p["sft_cfg"], "--init-from", ckpt,
+         "--chat-jsonl", ",".join(mix)])
+    final_ckpt = find_latest(ROOT / p["sft_ckpt_dir"])
 
     # 6. FINAL eval on the fully-trained model (perplexity + MCQ; real benchmarks too
     # when we used real data). Compare against the base eval in stage 3.
     if final_ckpt is not None:
         fck = str(final_ckpt)
-        run("6 final-eval", [PY, "scripts/evaluate.py", "--ckpt", fck, "--tokenizer", p["tok_path"]])
+        run("5 final-eval", [PY, "scripts/evaluate.py", "--ckpt", fck, "--tokenizer", p["tok_path"]])
         if p.get("real_posttrain"):
-            run("6b benchmarks", [PY, "scripts/benchmark.py", "--ckpt", fck,
+            run("5b benchmarks", [PY, "scripts/benchmark.py", "--ckpt", fck,
                                   "--tokenizer", p["tok_path"],
                                   "--tasks", "hellaswag,openbookqa,gsm8k,bfcl", "--limit", "100"])
 
-    # 7. quantize the base (size/quality report)
-    run("7 quantize", [PY, "scripts/quantize.py", "--ckpt", ckpt, "--tokenizer", p["tok_path"]])
+    # 6. quantize the base (size/quality report)
+    run("6 quantize", [PY, "scripts/quantize.py", "--ckpt", ckpt, "--tokenizer", p["tok_path"]])
 
-    # 8. final sample from the REASONING model (should emit <think>...</think>)
+    # 7. final sample from the SFT model (chats, and emits <think> when reasoning)
     sft_ckpt = final_ckpt
     if sft_ckpt:
-        run("8 sample (reasoning)", [PY, "-c",
+        run("7 sample", [PY, "-c",
             "import sys; sys.path.insert(0,'src');"
             "import torch;"
             "from llmscratch.model import Decoder, ModelConfig;"

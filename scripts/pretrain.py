@@ -118,6 +118,17 @@ def build_loader(cfg, tok, dist, skip_blocks: int = 0):
     elif d["source"] == "bin":
         # offline: pre-tokenized local .bin (no network). Random windows => resume
         # naturally continues sampling the full corpus; skip_blocks not needed.
+        import numpy as np
+        n_tok = len(np.memmap(d["bin_path"], dtype=np.uint16, mode="r"))
+        tps = bs * d["block_size"] * cfg["train"].get("grad_accum", 1) * dist.world_size
+        epochs = cfg["train"]["steps"] * tps / max(n_tok, 1)
+        if dist.is_main:
+            msg = (f"[data] {d['bin_path']}: {n_tok/1e6:.0f}M tokens; "
+                   f"~{epochs:.1f} epochs at {cfg['train']['steps']} steps")
+            if n_tok < 50_000_000 or epochs > 4:
+                msg += ("  WARNING: small corpus / many epochs -> the model will MEMORIZE "
+                        "(low train loss, high held-out perplexity). Add more data or train fewer steps.")
+            print(msg)
         from llmscratch.data.bin_data import BinDataset
         ds = BinDataset(d["bin_path"], d["block_size"],
                         seed=cfg["train"].get("seed", 0), rank=dist.rank,

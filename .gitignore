@@ -31,6 +31,10 @@ checkpoints/
 data/cache/
 data/*.arrow
 *.tfrecord
+# generated post-training data (real prepped datasets — keep the small sample_* fixtures)
+data/instruct.jsonl
+data/tools.jsonl
+data/reason.jsonl
 
 # OS / editor
 .DS_Store

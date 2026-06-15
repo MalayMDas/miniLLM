@@ -21,13 +21,13 @@ data:
   max_len: 512
 
 train:
-  steps: 400
-  time_budget_min: 10
+  steps: 6000             # ~1 epoch over the merged real mix (~34k convs at batch 8)
+  time_budget_min: 45     # raise for real SFT (the tiny placeholders only needed minutes)
   lr: 0.0002
-  warmup_steps: 20
+  warmup_steps: 100
   weight_decay: 0.0
   grad_accum: 1
-  batch_size: 4
+  batch_size: 8
   device: auto
   amp: true
   compile: false
