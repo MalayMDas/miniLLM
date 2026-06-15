@@ -1,0 +1,6 @@
+{"messages": [{"role": "user", "content": "What is the capital of France?"}, {"role": "assistant", "content": "<think>France is a country in Europe. Its capital city is Paris.</think>The capital of France is Paris."}]}
+{"messages": [{"role": "user", "content": "What is 7 times 8?"}, {"role": "assistant", "content": "<think>7 times 8 is the same as 7 added 8 times, which equals 56.</think>7 times 8 is 56."}]}
+{"messages": [{"role": "user", "content": "Is 17 a prime number?"}, {"role": "assistant", "content": "<think>17 is only divisible by 1 and itself, so it has no other factors.</think>Yes, 17 is a prime number."}]}
+{"messages": [{"role": "user", "content": "If a train travels 60 km in 2 hours, what is its speed?"}, {"role": "assistant", "content": "<think>Speed equals distance divided by time, so 60 divided by 2 is 30.</think>The train's speed is 30 km/h."}]}
+{"messages": [{"role": "user", "content": "What is 5 plus 6?"}, {"role": "assistant", "content": "<think>Adding 5 and 6 gives 11.</think>5 plus 6 equals 11."}]}
+{"messages": [{"role": "user", "content": "Which is larger, 3/4 or 2/3?"}, {"role": "assistant", "content": "<think>3/4 = 0.75 and 2/3 is about 0.667, so 3/4 is larger.</think>3/4 is larger than 2/3."}]}

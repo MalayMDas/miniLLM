@@ -30,6 +30,10 @@ def main():
     ap.add_argument("--config", default="configs/sft_tiny.yaml")
     ap.add_argument("--init-from", default=None,
                     help="base checkpoint path (overrides config init_from)")
+    ap.add_argument("--chat-jsonl", default=None,
+                    help="override data.chat_jsonl (e.g. CoT reasoning data)")
+    ap.add_argument("--ckpt-dir", default=None,
+                    help="override train.ckpt_dir (separate output dir for this pass)")
     args = ap.parse_args()
     cfg = load_config(args.config)
     torch.manual_seed(cfg["train"]["seed"])
@@ -49,7 +53,7 @@ def main():
     else:
         print("WARNING: no base checkpoint — SFT from random init (smoke test only)")
 
-    convs = load_chat_jsonl(cfg["data"]["chat_jsonl"])
+    convs = load_chat_jsonl(args.chat_jsonl or cfg["data"]["chat_jsonl"])
     ds = SFTDataset(tok, convs, max_len=cfg["data"]["max_len"])
     loader = DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=True,
                         collate_fn=make_collate(tok.pad_id))
@@ -58,7 +62,7 @@ def main():
     targs = TrainArgs(steps=t["steps"], lr=t["lr"], warmup_steps=t["warmup_steps"],
                       weight_decay=t["weight_decay"], grad_accum=t["grad_accum"],
                       device=device, amp=t["amp"], log_every=t["log_every"],
-                      ckpt_every=t["ckpt_every"], ckpt_dir=t["ckpt_dir"],
+                      ckpt_every=t["ckpt_every"], ckpt_dir=args.ckpt_dir or t["ckpt_dir"],
                       time_budget_min=t.get("time_budget_min"))
     logger = build_logger(cfg.get("logging", {}), run_id(cfg, "sft"), cfg)
     Trainer(model, loader, targs, logger=logger).train()

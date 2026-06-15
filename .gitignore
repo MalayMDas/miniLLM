@@ -25,6 +25,7 @@ checkpoints/
 *.bin
 *.safetensors
 *.gguf
+*.bin.meta.json
 
 # Data (pull from HF / regenerate; don't bloat the repo)
 data/cache/

@@ -90,7 +90,9 @@ One orchestrator runs every stage sequentially on a ~25M model + real FineWeb-Ed
 python scripts/run_all.py --smoke           # FIRST: verify wiring offline (~1 min)
 python scripts/run_all.py --pretrain-minutes 100   # the real ~2h run (needs internet)
 ```
-It does **tokenizer → pretrain (time-boxed) → eval → SFT → quantize → sample**.
+It does **tokenizer → pretrain → eval → instruct SFT → reasoning (CoT) → quantize →
+sample**. The reasoning pass trains on `<think>…</think>` data, so the final model
+emits reasoning tags before its answer.
 **Review progress live** in a second terminal: `tensorboard --logdir runs` →
 http://localhost:6006 (loss, perplexity, lr, grad-norm, tokens/sec, sample text).
 Config: `configs/pretrain_local.yaml` (sized for 6 GB; if you hit CUDA OOM, drop

@@ -10,8 +10,11 @@ the latest checkpoint (model + optimizer + data position), trains further, then 
 downstream stage re-runs on the new checkpoint.
     python scripts/run_all.py --minipile --add-steps 2000     # 2000 more steps
 
-Stages: [prepare data] -> tokenizer -> pretrain -> eval -> SFT -> quantize -> sample.
-Each runs as a subprocess so output streams live and import-order is clean.
+Stages: [prepare data] -> tokenizer -> pretrain -> eval -> instruct SFT ->
+reasoning (CoT distillation) -> quantize -> sample. Each runs as a subprocess so
+output streams live and import-order is clean. The reasoning pass trains on CoT data
+(assistant replies wrapped in <think>...</think>), so the final model emits reasoning
+tags before its answer.
 
 REVIEW PROGRESS: in another terminal run `python scripts/status.py --watch`
 or `tensorboard --logdir runs` (http://localhost:6006).
@@ -47,7 +50,7 @@ def profile(args) -> dict:
                     pre_cfg="configs/pretrain_tiny.yaml",
                     sft_cfg="configs/sft_tiny.yaml", tok_path="artifacts/tok.json",
                     ckpt_dir="artifacts/ckpt_pretrain", sft_ckpt_dir="artifacts/ckpt_sft",
-                    prep=None, time_boxed=False)
+                    reason_ckpt_dir="artifacts/ckpt_reason", prep=None, time_boxed=False)
     if args.minipile:
         return dict(name="minipile",
                     tok_cfg="configs/tokenizer_minipile.yaml",
@@ -56,6 +59,7 @@ def profile(args) -> dict:
                     tok_path="artifacts/tok_minipile.json",
                     ckpt_dir="artifacts/ckpt_pretrain_minipile",
                     sft_ckpt_dir="artifacts/ckpt_sft_minipile",
+                    reason_ckpt_dir="artifacts/ckpt_reason_minipile",
                     prep=dict(dataset="JeanKaddour/minipile", name="none",
                               out="data/minipile.bin",
                               tokens=args.prep_tokens or 1_500_000_000),
@@ -68,6 +72,7 @@ def profile(args) -> dict:
                 sft_cfg="configs/sft_local.yaml", tok_path="artifacts/tok_local.json",
                 ckpt_dir="artifacts/ckpt_pretrain_local",
                 sft_ckpt_dir="artifacts/ckpt_sft_local",
+                reason_ckpt_dir="artifacts/ckpt_reason_local",
                 prep=(dict(dataset="HuggingFaceFW/fineweb-edu", name="sample-10BT",
                            out="data/fineweb_local.bin", tokens=args.prep_tokens or 100_000_000)
                       if args.offline else None),
@@ -145,15 +150,25 @@ def main() -> None:
     run("3 evaluate", [PY, "scripts/evaluate.py", "--ckpt", ckpt, "--tokenizer", p["tok_path"]])
 
     # 4. instruct SFT (init from the base checkpoint)
-    run("4 sft", [PY, "scripts/sft.py", "--config", p["sft_cfg"], "--init-from", ckpt])
+    run("4 instruct-sft", [PY, "scripts/sft.py", "--config", p["sft_cfg"], "--init-from", ckpt])
+    instruct_ckpt = find_latest(ROOT / p["sft_ckpt_dir"])
 
-    # 5. quantize (size/quality report)
-    run("5 quantize", [PY, "scripts/quantize.py", "--ckpt", ckpt, "--tokenizer", p["tok_path"]])
+    # 5. reasoning: CoT distillation on <think>...</think> data, from the instruct model
+    final_ckpt = instruct_ckpt
+    if instruct_ckpt is not None:
+        run("5 reasoning (CoT)", [PY, "scripts/sft.py", "--config", p["sft_cfg"],
+                                  "--init-from", str(instruct_ckpt),
+                                  "--chat-jsonl", "data/sample_reason.jsonl",
+                                  "--ckpt-dir", p["reason_ckpt_dir"]])
+        final_ckpt = find_latest(ROOT / p["reason_ckpt_dir"]) or instruct_ckpt
 
-    # 6. final sample from the SFT model
-    sft_ckpt = find_latest(ROOT / p["sft_ckpt_dir"])
+    # 6. quantize the base (size/quality report)
+    run("6 quantize", [PY, "scripts/quantize.py", "--ckpt", ckpt, "--tokenizer", p["tok_path"]])
+
+    # 7. final sample from the REASONING model (should emit <think>...</think>)
+    sft_ckpt = final_ckpt
     if sft_ckpt:
-        run("6 sample", [PY, "-c",
+        run("7 sample (reasoning)", [PY, "-c",
             "import sys; sys.path.insert(0,'src');"
             "import torch;"
             "from llmscratch.model import Decoder, ModelConfig;"
